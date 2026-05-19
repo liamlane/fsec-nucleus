@@ -1,0 +1,72 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nucleus-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nucleus}
+      POSTGRES_USER: ${POSTGRES_USER:-nucleus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/src/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - nucleus-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nucleus}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nucleus-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nucleus}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-nucleus}
+      JWT_SECRET: ${JWT_SECRET:-supersecretchangeme}
+      PIN_HASH: ${PIN_HASH:-}
+      PORT: 3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nucleus-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: nucleus-ui
+    restart: unless-stopped
+    networks:
+      - nucleus-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: nucleus-proxy
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - nucleus-net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  nucleus-net:
+    driver: bridge
