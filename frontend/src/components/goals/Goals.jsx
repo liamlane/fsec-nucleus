@@ -14,6 +14,9 @@ export default function Goals() {
   const [filterStatus, setFilterStatus] = useState('active');
   const [expanded, setExpanded] = useState(null);
   const [msForm, setMsForm] = useState({});
+  // Stage 4: linked habits and time projects
+  const [linkedHabits, setLinkedHabits] = useState({});
+  const [linkedTime, setLinkedTime] = useState({});
 
   const load = async () => {
     const [g, a] = await Promise.allSettled([get('/goals'), get('/goals/life-areas')]);
@@ -29,10 +32,22 @@ export default function Goals() {
     setMilestones(prev => ({ ...prev, [goalId]: ms }));
   };
 
+  // Stage 4: load linked habits and time projects for a goal
+  const loadLinked = async (goalId) => {
+    if (linkedHabits[goalId] || linkedTime[goalId]) return;
+    const [habits, projects] = await Promise.allSettled([
+      get(`/goals/${goalId}/habits`).catch(() => []),
+      get(`/goals/${goalId}/time-projects`).catch(() => [])
+    ]);
+    if (habits.value) setLinkedHabits(prev => ({ ...prev, [goalId]: habits.value }));
+    if (projects.value) setLinkedTime(prev => ({ ...prev, [goalId]: projects.value }));
+  };
+
   const toggleExpand = (id) => {
     if (expanded === id) { setExpanded(null); return; }
     setExpanded(id);
     loadMilestones(id);
+    loadLinked(id); // Stage 4
   };
 
   const handleAdd = async () => {
@@ -163,9 +178,10 @@ export default function Goals() {
               </div>
             </div>
 
-            {/* Expanded milestones */}
+            {/* Expanded view: milestones + linked habits + linked time projects */}
             {expanded === g.id && (
               <div style={{ borderTop: '1px solid var(--border)', padding: '16px 20px', background: 'var(--bg-secondary)' }}>
+                {/* Milestones section (existing) */}
                 <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 12 }}>
                   Milestones
                 </div>
@@ -188,8 +204,42 @@ export default function Goals() {
                   <button className="btn btn-ghost btn-sm" onClick={() => msForm.title && addMilestone(g.id)}>Add</button>
                 </div>
 
-                {/* Status change */}
-                <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+                {/* Stage 4: Linked Habits */}
+                <div style={{ marginTop: 24 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 12 }}>
+                    Linked Habits
+                  </div>
+                  {linkedHabits[g.id] && linkedHabits[g.id].length > 0 ? (
+                    linkedHabits[g.id].map(h => (
+                      <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 13 }}>{h.name}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Streak: {h.current_streak || 0} days</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>No habits linked to this goal</p>
+                  )}
+                </div>
+
+                {/* Stage 4: Linked Time Projects */}
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 12 }}>
+                    Linked Time Projects
+                  </div>
+                  {linkedTime[g.id] && linkedTime[g.id].length > 0 ? (
+                    linkedTime[g.id].map(p => (
+                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 13 }}>{p.name}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmt.duration(p.total_seconds || 0)} total</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>No time projects linked to this goal</p>
+                  )}
+                </div>
+
+                {/* Status change buttons (existing) */}
+                <div style={{ display: 'flex', gap: 6, marginTop: 20 }}>
                   {['active','completed','paused','abandoned'].filter(s => s !== g.status).map(s => (
                     <button key={s} className="btn btn-ghost btn-sm" onClick={() => handleStatus(g.id, s)} style={{ textTransform: 'capitalize', fontSize: 11 }}>
                       → {s}

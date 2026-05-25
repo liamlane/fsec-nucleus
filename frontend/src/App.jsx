@@ -10,7 +10,11 @@ import Notes from './components/notes/Notes.jsx';
 import Calendar from './components/calendar/Calendar.jsx';
 import Journal from './components/journal/Journal.jsx';
 import TimeTracking from './components/timetracking/TimeTracking.jsx';
+// add to imports
+import Settings from './components/Settings.jsx';
 
+// inside the <Route path="/" element={<Protected><Layout /></Protected>}> block, after the last route:
+<Route path="settings" element={<Settings />} />
 const Protected = ({ children }) => {
   const { isAuth } = useAuth();
   return isAuth ? children : <Navigate to="/login" replace />;

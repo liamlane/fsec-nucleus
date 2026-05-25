@@ -9,13 +9,16 @@ export default function TimeTracking() {
   const [elapsed, setElapsed]   = useState(0);
   const [modal, setModal]       = useState(null);
   const [form, setForm]         = useState({});
+  // Stage 4: goals list for linking
+  const [goals, setGoals]       = useState([]);
   const interval = useRef(null);
 
   const load = async () => {
-    const [p, e, r] = await Promise.allSettled([
+    const [p, e, r, g] = await Promise.allSettled([
       get('/time/projects'),
       get('/time/entries?from=' + new Date(Date.now() - 7 * 86400000).toISOString()),
       get('/time/running'),
+      get('/goals') // Stage 4: fetch goals for dropdown
     ]);
     if (p.value) setProjects(p.value);
     if (e.value) setEntries(e.value);
@@ -26,6 +29,7 @@ export default function TimeTracking() {
       setRunning(null);
       clearInterval(interval.current);
     }
+    if (g.value) setGoals(g.value);
   };
 
   useEffect(() => { load(); }, []);
@@ -87,10 +91,12 @@ export default function TimeTracking() {
           <h1 className="page-title">Time Tracking</h1>
           <p className="page-subtitle">{fmt.duration(totalThisWeek)} tracked this week</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setModal('project')}>+ Project</button>
+        <button className="btn btn-primary" onClick={() => { setModal('project'); setForm({}); }}>
+          + Project
+        </button>
       </div>
 
-      {/* ── Timer ────────────────────────────────────────────────────────── */}
+      {/* Timer section (unchanged) */}
       <div className="card" style={{
         marginBottom: 24, textAlign: 'center', padding: '32px 24px',
         background: running
@@ -98,7 +104,6 @@ export default function TimeTracking() {
           : 'var(--bg-card)',
         borderColor: running ? 'rgba(124,106,255,0.3)' : 'var(--border)',
       }}>
-        {/* timer-display class lets CSS shrink font on mobile */}
         <div className="timer-display" style={{
           color: running ? 'var(--accent)' : 'var(--text-primary)',
         }}>
@@ -136,10 +141,10 @@ export default function TimeTracking() {
         )}
       </div>
 
-      {/* ── two-col-layout-wide: stacks on mobile via CSS ────────────────── */}
+      {/* Two-column layout */}
       <div className="two-col-layout-wide">
 
-        {/* Left — chart + entries */}
+        {/* Left side: chart + entries */}
         <div>
           {chartData.length > 0 && (
             <div className="card" style={{ marginBottom: 20 }}>
@@ -193,7 +198,7 @@ export default function TimeTracking() {
           </div>
         </div>
 
-        {/* Right — projects */}
+        {/* Right side: projects list */}
         <div>
           <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>Projects</h3>
           {projects.map(p => (
@@ -210,7 +215,7 @@ export default function TimeTracking() {
         </div>
       </div>
 
-      {/* ── Add Project modal ─────────────────────────────────────────────── */}
+      {/* Add Project Modal – Stage 4 adds goal dropdown */}
       {modal === 'project' && (
         <div className="modal-overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -222,6 +227,14 @@ export default function TimeTracking() {
             <div className="form-group">
               <label className="form-label">Colour</label>
               <input type="color" value={form.colour || '#6366f1'} onChange={e => setForm({ ...form, colour: e.target.value })} style={{ height: 44 }} />
+            </div>
+            {/* Stage 4: Goal linking dropdown */}
+            <div className="form-group">
+              <label className="form-label">Link to Goal (optional)</label>
+              <select value={form.goal_id || ''} onChange={e => setForm({ ...form, goal_id: e.target.value })}>
+                <option value="">None</option>
+                {goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
+              </select>
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>

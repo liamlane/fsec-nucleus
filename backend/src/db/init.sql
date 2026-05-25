@@ -247,3 +247,100 @@ CREATE TABLE IF NOT EXISTS payees (
 );
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS payee_id UUID REFERENCES payees(id) ON DELETE SET NULL;
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS next_due DATE;
+-- ============================================================
+-- STAGE 4 MIGRATION – additive, safe to run multiple times
+-- ============================================================
+
+-- 1. App logs (for the log viewer)
+CREATE TABLE IF NOT EXISTS app_logs (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    level         TEXT NOT NULL CHECK (level IN ('info','warn','error','debug')),
+    module        TEXT,
+    message       TEXT NOT NULL,
+    meta          JSONB,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_app_logs_created_at ON app_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level);
+
+-- 2. Earl list ("My Name Is Earl" style)
+CREATE TABLE IF NOT EXISTS earl_list (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    person      TEXT NOT NULL,
+    situation   TEXT NOT NULL,
+    resolved    BOOLEAN DEFAULT FALSE,
+    resolved_at TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. Sleep logs
+CREATE TABLE IF NOT EXISTS sleep_logs (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    date             DATE NOT NULL UNIQUE,
+    bed_time         TIMESTAMPTZ,
+    wake_time        TIMESTAMPTZ,
+    duration_minutes INT,
+    quality          INT CHECK (quality BETWEEN 1 AND 5),
+    notes            TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sleep_logs_date ON sleep_logs(date);
+
+-- 4. Media list (books, films, series, etc.)
+CREATE TABLE IF NOT EXISTS media_list (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title       TEXT NOT NULL,
+    type        TEXT CHECK (type IN ('book','film','series','podcast','game')),
+    status      TEXT DEFAULT 'want' CHECK (status IN ('want','in_progress','done')),
+    rating      INT CHECK (rating BETWEEN 1 AND 5),
+    notes       TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. Contacts tracker
+CREATE TABLE IF NOT EXISTS contacts_tracker (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name                    TEXT NOT NULL,
+    relationship            TEXT,
+    last_contacted          DATE,
+    contact_frequency_days  INT DEFAULT 30,
+    notes                   TEXT
+);
+
+-- 6. Reference data management – add soft‑delete flags and user_managed columns
+ALTER TABLE life_areas ADD COLUMN IF NOT EXISTS user_managed BOOLEAN DEFAULT TRUE;
+ALTER TABLE life_areas ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
+-- Mark the default seeded areas as not user‑managed (so they can be hidden but not deleted)
+UPDATE life_areas SET user_managed = FALSE WHERE name IN ('Health','Finance','Career','Relationships','Personal Growth','Fun');
+
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
+ALTER TABLE notebooks ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
+
+-- 7. Goal linking – add goal_id to time_projects if not already present
+ALTER TABLE time_projects ADD COLUMN IF NOT EXISTS goal_id UUID REFERENCES goals(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_time_projects_goal_id ON time_projects(goal_id);
+
+-- (habits already has goal_id – just ensure index exists)
+CREATE INDEX IF NOT EXISTS idx_habits_goal_id ON habits(goal_id);
+
+-- 8. Add updated_at triggers for all main tables (optional but useful)
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+DECLARE
+    tbl TEXT;
+BEGIN
+    FOR tbl IN SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('goals','habits','notes','events','time_projects','time_entries','journal_entries','transactions')
+    LOOP
+        EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()', tbl);
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = format('update_%I_updated_at', tbl)) THEN
+            EXECUTE format('CREATE TRIGGER update_%I_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()', tbl, tbl);
+        END IF;
+    END LOOP;
+END;
+$$;

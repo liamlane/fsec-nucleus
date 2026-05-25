@@ -82,3 +82,10 @@ app.use((err, req, res, next) => {  // eslint-disable-line no-unused-vars
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Nucleus API running on :${PORT}`));
+// ... after existing requires
+const searchRouter = require('./routes/search');
+const settingsRouter = require('./routes/settings');
+
+// ... after other app.use() lines
+app.use('/search', requireAuth, searchRouter);
+app.use('/settings', requireAuth, settingsRouter);
