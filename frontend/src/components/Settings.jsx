@@ -49,27 +49,47 @@ export default function Settings() {
     const pickerRef = useRef(null);
 
     const loadPrefs = async () => {
-        const data = await get('/settings/preferences');
-        setPrefs(prev => ({ ...prev, ...data }));
+        try {
+            const data = await get('/settings/preferences');
+            setPrefs(prev => ({ ...prev, ...data }));
+        } catch (err) {
+            console.error('Failed to load preferences', err);
+        }
     };
     const loadLifeAreas = async () => {
-        const data = await get('/settings/life-areas');
-        setLifeAreas(data);
+        try {
+            const data = await get('/settings/life-areas');
+            setLifeAreas(data);
+        } catch (err) {
+            console.error('Failed to load life areas', err);
+        }
     };
     const loadCategories = async () => {
-        const data = await get('/settings/categories');
-        setCategories(data);
+        try {
+            const data = await get('/settings/categories');
+            setCategories(data);
+        } catch (err) {
+            console.error('Failed to load categories', err);
+        }
     };
     const loadNotebooks = async () => {
-        const data = await get('/settings/notebooks');
-        setNotebooks(data);
+        try {
+            const data = await get('/settings/notebooks');
+            setNotebooks(data);
+        } catch (err) {
+            console.error('Failed to load notebooks', err);
+        }
     };
     const loadLogs = async () => {
-        const params = new URLSearchParams();
-        if (logFilter.level) params.append('level', logFilter.level);
-        if (logFilter.module) params.append('module', logFilter.module);
-        const data = await get(`/settings/logs?${params.toString()}`);
-        setLogs(data);
+        try {
+            const params = new URLSearchParams();
+            if (logFilter.level) params.append('level', logFilter.level);
+            if (logFilter.module) params.append('module', logFilter.module);
+            const data = await get(`/settings/logs?${params.toString()}`);
+            setLogs(data);
+        } catch (err) {
+            console.error('Failed to load logs', err);
+        }
     };
 
     useEffect(() => { loadPrefs(); }, []);
@@ -89,8 +109,12 @@ export default function Settings() {
     }, []);
 
     const updatePref = async (key, value) => {
-        await patch('/settings/preferences', { [key]: value });
-        setPrefs(prev => ({ ...prev, [key]: value }));
+        try {
+            await patch('/settings/preferences', { [key]: value });
+            setPrefs(prev => ({ ...prev, [key]: value }));
+        } catch (err) {
+            alert('Failed to update preference: ' + err.message);
+        }
     };
 
     const changePin = async () => {
@@ -104,7 +128,6 @@ export default function Settings() {
         }
     };
 
-    // Fixed export function using fetch with token
     const exportData = async () => {
         const token = localStorage.getItem('nucleus_token');
         if (!token) {
@@ -156,33 +179,37 @@ export default function Settings() {
         const { type, item } = modal;
         const data = { ...modalForm };
         if (!data.name) return alert('Name is required');
-        if (type === 'lifearea') {
-            if (item) {
-                await patch(`/settings/life-areas/${item.id}`, data);
-                loadLifeAreas();
-            } else {
-                await post('/settings/life-areas', data);
-                loadLifeAreas();
+        try {
+            if (type === 'lifearea') {
+                if (item) {
+                    await patch(`/settings/life-areas/${item.id}`, data);
+                    await loadLifeAreas();
+                } else {
+                    await post('/settings/life-areas', data);
+                    await loadLifeAreas();
+                }
+            } else if (type === 'category') {
+                if (item) {
+                    await patch(`/settings/categories/${item.id}`, data);
+                    await loadCategories();
+                } else {
+                    const categoryData = { ...data, type: modalForm.type || 'expense' };
+                    await post('/settings/categories', categoryData);
+                    await loadCategories();
+                }
+            } else if (type === 'notebook') {
+                if (item) {
+                    await patch(`/settings/notebooks/${item.id}`, data);
+                    await loadNotebooks();
+                } else {
+                    await post('/settings/notebooks', data);
+                    await loadNotebooks();
+                }
             }
-        } else if (type === 'category') {
-            if (item) {
-                await patch(`/settings/categories/${item.id}`, data);
-                loadCategories();
-            } else {
-                const categoryData = { ...data, type: modalForm.type || 'expense' };
-                await post('/settings/categories', categoryData);
-                loadCategories();
-            }
-        } else if (type === 'notebook') {
-            if (item) {
-                await patch(`/settings/notebooks/${item.id}`, data);
-                loadNotebooks();
-            } else {
-                await post('/settings/notebooks', data);
-                loadNotebooks();
-            }
+            closeModal();
+        } catch (err) {
+            alert(err.message || 'Save failed');
         }
-        closeModal();
     };
 
     const renderModal = () => {
@@ -307,39 +334,171 @@ export default function Settings() {
 
             {/* Life Areas */}
             {activeTab === 'lifeareas' && (
-                <div><button className="btn btn-primary btn-sm" onClick={() => openModal('lifearea')}>+ Add Life Area</button>
-                <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
-                    {lifeAreas.map(la => (<div key={la.id} className="card" style={{ padding: 12, borderLeft: `4px solid ${la.colour}` }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><span style={{ fontSize: 20 }}>{getEmojiDisplay(la.icon)}</span> <strong>{la.name}</strong></span><div><button className="btn-icon" onClick={() => openModal('lifearea', la)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/life-areas/${la.id}`); loadLifeAreas(); } }}>×</button></div></div>{!la.user_managed && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>system</span>}</div>))}
-                </div></div>
+                <div>
+                    <button className="btn btn-primary btn-sm" onClick={() => openModal('lifearea')}>+ Add Life Area</button>
+                    <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
+                        {lifeAreas.map(la => (
+                            <div key={la.id} className="card" style={{ padding: 12, borderLeft: `4px solid ${la.colour}` }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span><span style={{ fontSize: 20 }}>{getEmojiDisplay(la.icon)}</span> <strong>{la.name}</strong></span>
+                                    <div>
+                                        <button 
+                                            className="btn-icon" 
+                                            onClick={() => {
+                                                if (!la.user_managed) {
+                                                    alert('System life areas cannot be edited');
+                                                    return;
+                                                }
+                                                openModal('lifearea', la);
+                                            }}
+                                            disabled={!la.user_managed}
+                                            style={{ opacity: la.user_managed ? 1 : 0.5 }}
+                                        >✎</button>
+                                        <button 
+                                            className="btn-icon" 
+                                            onClick={async () => { 
+                                                if (!la.user_managed) {
+                                                    alert('System life areas cannot be deleted');
+                                                    return;
+                                                }
+                                                if (confirm('Delete this life area? It will be hidden from future use.')) {
+                                                    try {
+                                                        await del(`/settings/life-areas/${la.id}`);
+                                                        await loadLifeAreas();
+                                                    } catch (err) {
+                                                        alert(err.message || 'Delete failed');
+                                                    }
+                                                }
+                                            }}
+                                            disabled={!la.user_managed}
+                                            style={{ opacity: la.user_managed ? 1 : 0.5 }}
+                                        >×</button>
+                                    </div>
+                                </div>
+                                {!la.user_managed && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>system</span>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
             )}
 
             {/* Categories */}
             {activeTab === 'categories' && (
-                <div><button className="btn btn-primary btn-sm" onClick={() => openModal('category')}>+ Add Category</button>
-                <div style={{ marginTop: 16 }}><h3>Expense</h3><div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
-                    {categories.filter(c => c.type === 'expense').map(cat => (<div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span><div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div></div></div>))}
-                </div><h3 style={{ marginTop: 20 }}>Income</h3><div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
-                    {categories.filter(c => c.type === 'income').map(cat => (<div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span><div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div></div></div>))}
-                </div></div></div>
+                <div>
+                    <button className="btn btn-primary btn-sm" onClick={() => openModal('category')}>+ Add Category</button>
+                    <div style={{ marginTop: 16 }}>
+                        <h3>Expense</h3>
+                        <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
+                            {categories.filter(c => c.type === 'expense').map(cat => (
+                                <div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span>
+                                        <div>
+                                            <button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button>
+                                            <button className="btn-icon" onClick={async () => { 
+                                                if (confirm('Delete this category?')) {
+                                                    try {
+                                                        await del(`/settings/categories/${cat.id}`);
+                                                        await loadCategories();
+                                                    } catch (err) {
+                                                        alert(err.message || 'Delete failed');
+                                                    }
+                                                }
+                                            }}>×</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <h3 style={{ marginTop: 20 }}>Income</h3>
+                        <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
+                            {categories.filter(c => c.type === 'income').map(cat => (
+                                <div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span>
+                                        <div>
+                                            <button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button>
+                                            <button className="btn-icon" onClick={async () => { 
+                                                if (confirm('Delete this category?')) {
+                                                    try {
+                                                        await del(`/settings/categories/${cat.id}`);
+                                                        await loadCategories();
+                                                    } catch (err) {
+                                                        alert(err.message || 'Delete failed');
+                                                    }
+                                                }
+                                            }}>×</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* Notebooks */}
             {activeTab === 'notebooks' && (
-                <div><button className="btn btn-primary btn-sm" onClick={() => openModal('notebook')}>+ Add Notebook</button>
-                <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
-                    {notebooks.map(nb => (<div key={nb.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${nb.colour}` }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span><span style={{ fontSize: 16 }}>{getEmojiDisplay(nb.icon)}</span> {nb.name}</span><div><button className="btn-icon" onClick={() => openModal('notebook', nb)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/notebooks/${nb.id}`); loadNotebooks(); } }}>×</button></div></div></div>))}
-                </div></div>
+                <div>
+                    <button className="btn btn-primary btn-sm" onClick={() => openModal('notebook')}>+ Add Notebook</button>
+                    <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
+                        {notebooks.map(nb => (
+                            <div key={nb.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${nb.colour}` }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span><span style={{ fontSize: 16 }}>{getEmojiDisplay(nb.icon)}</span> {nb.name}</span>
+                                    <div>
+                                        <button className="btn-icon" onClick={() => openModal('notebook', nb)}>✎</button>
+                                        <button className="btn-icon" onClick={async () => { 
+                                            if (confirm('Delete this notebook? Notes will remain but become unassigned.')) {
+                                                try {
+                                                    await del(`/settings/notebooks/${nb.id}`);
+                                                    await loadNotebooks();
+                                                } catch (err) {
+                                                    alert(err.message || 'Delete failed');
+                                                }
+                                            }
+                                        }}>×</button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             )}
 
             {/* Logs */}
             {activeTab === 'logs' && (
-                <div><div style={{ display: 'flex', gap: 12, marginBottom: 16 }}><select value={logFilter.level} onChange={e => setLogFilter({...logFilter, level: e.target.value})}><option value="">All levels</option><option>info</option><option>warn</option><option>error</option></select><input placeholder="Module" value={logFilter.module} onChange={e => setLogFilter({...logFilter, module: e.target.value})} /></div>
-                <div className="card" style={{ padding: 0, overflowX: 'auto' }}><table style={{ width: '100%', fontSize: 12 }}><thead><tr><th>Time</th><th>Level</th><th>Module</th><th>Message</th></tr></thead><tbody>{logs.logs.map(l => (<tr key={l.id}><td>{new Date(l.created_at).toLocaleString()}</td><td style={{ color: l.level === 'error' ? '#ef4444' : l.level === 'warn' ? '#f59e0b' : '#10b981' }}>{l.level}</td><td>{l.module}</td><td>{l.message}</td></tr>))}</tbody></table></div></div>
+                <div>
+                    <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                        <select value={logFilter.level} onChange={e => setLogFilter({...logFilter, level: e.target.value})}>
+                            <option value="">All levels</option><option>info</option><option>warn</option><option>error</option>
+                        </select>
+                        <input placeholder="Module" value={logFilter.module} onChange={e => setLogFilter({...logFilter, module: e.target.value})} />
+                    </div>
+                    <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+                        <table style={{ width: '100%', fontSize: 12 }}>
+                            <thead><tr><th>Time</th><th>Level</th><th>Module</th><th>Message</th></tr></thead>
+                            <tbody>
+                                {logs.logs.map(l => (
+                                    <tr key={l.id}>
+                                        <td>{new Date(l.created_at).toLocaleString()}</td>
+                                        <td style={{ color: l.level === 'error' ? '#ef4444' : l.level === 'warn' ? '#f59e0b' : '#10b981' }}>{l.level}</td>
+                                        <td>{l.module}</td>
+                                        <td>{l.message}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             )}
 
             {/* Export */}
             {activeTab === 'export' && (
-                <div className="card"><button className="btn btn-primary" onClick={exportData}>Download all data as JSON</button><p className="text-muted" style={{ marginTop: 12, fontSize: 12 }}>Export includes all accounts, transactions, goals, habits, notes, journal, time entries, and wellness data.</p></div>
+                <div className="card">
+                    <button className="btn btn-primary" onClick={exportData}>Download all data as JSON</button>
+                    <p className="text-muted" style={{ marginTop: 12, fontSize: 12 }}>Export includes all accounts, transactions, goals, habits, notes, journal, time entries, and wellness data.</p>
+                </div>
             )}
 
             {renderModal()}
