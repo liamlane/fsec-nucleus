@@ -10,11 +10,8 @@ import Notes from './components/notes/Notes.jsx';
 import Calendar from './components/calendar/Calendar.jsx';
 import Journal from './components/journal/Journal.jsx';
 import TimeTracking from './components/timetracking/TimeTracking.jsx';
-// add to imports
-import Settings from './components/Settings.jsx';
+import Settings from './components/Settings.jsx';   // ✅ correct import
 
-// inside the <Route path="/" element={<Protected><Layout /></Protected>}> block, after the last route:
-<Route path="settings" element={<Settings />} />
 const Protected = ({ children }) => {
   const { isAuth } = useAuth();
   return isAuth ? children : <Navigate to="/login" replace />;
@@ -35,6 +32,7 @@ export default function App() {
             <Route path="calendar" element={<Calendar />} />
             <Route path="journal" element={<Journal />} />
             <Route path="time" element={<TimeTracking />} />
+            <Route path="settings" element={<Settings />} />   {/* ✅ now inside the protected route */}
           </Route>
         </Routes>
       </BrowserRouter>
