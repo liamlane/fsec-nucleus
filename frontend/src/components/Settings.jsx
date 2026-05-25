@@ -1,21 +1,52 @@
 import { useState, useEffect, useRef } from 'react';
 import { get, post, patch, del } from '../utils/api';
 
-// Predefined emoji list (categories: common, smileys, activities, objects, symbols)
+// Comprehensive emoji list – includes all from your screenshot + many more
 const EMOJI_LIST = [
-    // Common
-    '📌', '💡', '❤️', '⭐', '💰', '✨', '🎯', '🏆',
+    // Finance & Money
+    '💰', '💵', '💷', '💶', '💳', '🏦', '📈', '📉', 'piggy-bank', 'landmark', 'repeat', 'plus', 'salary',
+    // Shopping & Goods
+    '🛒', '🛍️', 'shopping-cart', 'utensils', '🍔', '🍕', '🥗', '🍎', '🥛', '🍺', '☕', '🧃',
+    // Clothing
+    '👕', '👖', '👗', '👔', '👟', '👠', '🧥', '🧦', '🩳', '🩴',
+    // Home & Utilities
+    '🏠', '🔌', '💡', '🔧', '🔨', '🧹', '🧺', '🚿', '🛏️', '🪑', '📺', '❄️', '🔥', '💧',
+    // Health & Personal
+    '🏥', '🩺', '💊', '🧪', '🩹', '🧘', '🏃', '🚴', '🏋️', '🥗', '🍎', '🥦', '🧃',
+    // Transport & Car
+    '🚗', '🚕', '🚌', '🚲', '🛵', '⛽', '🚆', '✈️', '🚢', '🚁', '🛴',
+    // Work & Freelance
+    '💼', '💻', '🖥️', '📱', '📞', '✉️', '📎', '🗂️', '📊', '📅', '⏰', '🤝', '🎯',
+    // Subscriptions & Services
+    '🔄', '📺', '🎬', '🎵', '📰', '📚', '📖', '🎮', '🧾', '📝', '🔁',
+    // Misc / Other
+    '❓', '❗', '🔹', '🔸', '📌', '⭐', '❤️', '✨', '⚙️', '🔒', '🔓', '✅', '❌',
     // Smileys & People
-    '😀', '😎', '🤔', '💪', '👤', '👥', '🧠', '💬',
-    // Activities
-    '🏃', '📚', '🎨', '🎵', '🎮', '🏋️', '🧘', '🚀',
-    // Objects
-    '💼', '📖', '💻', '📱', '⌚', '🔧', '🔨', '🏠',
-    // Nature & Food
-    '🌱', '🌲', '🍎', '🥗', '☕', '🍺', '🌙', '☀️',
-    // Symbols
-    '✅', '❌', '⚠️', '🔒', '🔓', '⚙️', '🔔', '📅',
+    '😀', '😎', '🤔', '😢', '😡', '😍', '🥳', '😴', '💪', '🧠', '👤', '👥', '👶', '🧓',
+    // Nature
+    '🌱', '🌲', '🌳', '🍃', '🌺', '🌞', '🌙', '☀️', '🌈', '⛅',
+    // Activities & Hobbies
+    '🎨', '🎭', '🎤', '🎧', '🎸', '🏀', '⚽', '🎾', '🏈', '🏐', '🎲', '🧩', '🎮',
 ];
+
+// Map old text-only names to emoji (for backward compatibility)
+const textToEmoji = {
+    'piggy-bank': '🐷', 'landmark': '🏛️', 'repeat': '🔄', 'plus': '➕', 'salary': '💼',
+    'shopping-cart': '🛒', 'utensils': '🍽️', 'shirt': '👕', 'stethoscope': '🩺',
+    'more-horizontal': '⋯', 'scissors': '✂️', 'car': '🚗', 'zap': '⚡',
+    'laptop': '💻', 'other-income': '➕',
+};
+
+function getEmojiDisplay(icon) {
+    if (!icon) return '📌';
+    // If already an emoji (multi-byte), return as is
+    if (/[\u{1F300}-\u{1F6FF}]/u.test(icon)) return icon;
+    // Try mapping from text name
+    const lower = icon.toLowerCase();
+    if (textToEmoji[lower]) return textToEmoji[lower];
+    // Fallback to the original string (maybe it's a short name)
+    return icon;
+}
 
 export default function Settings() {
     const [activeTab, setActiveTab] = useState('prefs');
@@ -63,7 +94,6 @@ export default function Settings() {
     useEffect(() => { if (activeTab === 'notebooks') loadNotebooks(); }, [activeTab]);
     useEffect(() => { if (activeTab === 'logs') loadLogs(); }, [activeTab, logFilter]);
 
-    // Close emoji picker when clicking outside
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (pickerRef.current && !pickerRef.current.contains(event.target)) {
@@ -149,15 +179,6 @@ export default function Settings() {
         closeModal();
     };
 
-    const getEmojiDisplay = (icon) => {
-        if (!icon) return '📌';
-        // If it's already an emoji (contains multi-byte chars), return as is
-        if (/[\u{1F300}-\u{1F6FF}]/u.test(icon)) return icon;
-        // Simple map for common names (fallback)
-        const map = { lightbulb: '💡', user: '👤', briefcase: '💼', heart: '❤️', star: '⭐', book: '📖', film: '🎬', music: '🎵', gamepad: '🎮', pound: '💰', sparkles: '✨', 'pound-sterling': '💰', 'gamepad-2': '🎮' };
-        return map[icon.toLowerCase()] || icon;
-    };
-
     const renderModal = () => {
         if (!modal) return null;
         const { type, item } = modal;
@@ -165,7 +186,7 @@ export default function Settings() {
         const title = isEdit ? `Edit ${type}` : `Add ${type}`;
         return (
             <div className="modal-overlay" onClick={closeModal}>
-                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 450 }}>
+                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
                     <div className="modal-title">{title}</div>
                     <div className="form-group">
                         <label>Name</label>
@@ -186,8 +207,8 @@ export default function Settings() {
                     </div>
                     <div className="form-group">
                         <label>Icon</label>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <div style={{ fontSize: 28, width: 48, textAlign: 'center', background: 'var(--bg-secondary)', borderRadius: 8, padding: '4px' }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <div style={{ fontSize: 32, width: 60, textAlign: 'center', background: 'var(--bg-secondary)', borderRadius: 8, padding: '4px' }}>
                                 {getEmojiDisplay(modalForm.icon)}
                             </div>
                             <button type="button" className="btn btn-ghost" onClick={() => setShowEmojiPicker(!showEmojiPicker)} style={{ fontSize: 20 }}>
@@ -197,7 +218,7 @@ export default function Settings() {
                                 placeholder="or type any text"
                                 value={modalForm.icon}
                                 onChange={e => setModalForm({ ...modalForm, icon: e.target.value })}
-                                style={{ flex: 1 }}
+                                style={{ flex: 1, minWidth: 120 }}
                             />
                         </div>
                         {showEmojiPicker && (
@@ -207,14 +228,14 @@ export default function Settings() {
                                 background: 'var(--bg-card)',
                                 border: '1px solid var(--border)',
                                 borderRadius: 12,
-                                padding: 8,
+                                padding: 12,
                                 marginTop: 8,
-                                width: 280,
-                                maxHeight: 200,
+                                width: 340,
+                                maxHeight: 280,
                                 overflowY: 'auto',
                                 display: 'grid',
                                 gridTemplateColumns: 'repeat(8, 1fr)',
-                                gap: 6,
+                                gap: 8,
                                 boxShadow: '0 8px 20px rgba(0,0,0,0.2)'
                             }}>
                                 {EMOJI_LIST.map(emoji => (
@@ -225,16 +246,17 @@ export default function Settings() {
                                             setModalForm({ ...modalForm, icon: emoji });
                                             setShowEmojiPicker(false);
                                         }}
-                                        style={{ fontSize: 24, padding: 4, cursor: 'pointer' }}
+                                        style={{ fontSize: 26, padding: 6, cursor: 'pointer' }}
+                                        title={emoji}
                                     >
-                                        {emoji}
+                                        {getEmojiDisplay(emoji)}
                                     </button>
                                 ))}
                             </div>
                         )}
-                        <small style={{ fontSize: 11, color: 'var(--text-muted)' }}>Click the picker or type your own emoji/text.</small>
+                        <small style={{ fontSize: 11, color: 'var(--text-muted)' }}>Click an emoji to use it, or type your own (supports both emojis and text names).</small>
                     </div>
-                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
                         <button className="btn btn-ghost" onClick={closeModal}>Cancel</button>
                         <button className="btn btn-primary" onClick={handleModalSave}>Save</button>
                     </div>
@@ -263,7 +285,7 @@ export default function Settings() {
                     <div className="form-group">
                         <label>Currency</label>
                         <select value={prefs.currency} onChange={e => updatePref('currency', e.target.value)}>
-                            <option>GBP</option><option>USD</option><option>EUR</option>
+                            <option>GBP</option><option>USD</option><option>EUR</option><option>JPY</option><option>CAD</option><option>AUD</option>
                         </select>
                     </div>
                     <div className="form-group">
