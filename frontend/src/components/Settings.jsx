@@ -18,10 +18,29 @@ const EMOJI_LIST = [
 ];
 
 const textToEmoji = {
-    'piggy-bank': '🐷', 'landmark': '🏛️', 'repeat': '🔄', 'plus': '➕', 'salary': '💼',
-    'shopping-cart': '🛒', 'utensils': '🍽️', 'shirt': '👕', 'stethoscope': '🩺',
-    'more-horizontal': '⋯', 'scissors': '✂️', 'car': '🚗', 'zap': '⚡',
-    'laptop': '💻', 'other-income': '➕',
+    // Existing mappings
+    'piggy-bank': '🐷',
+    'landmark': '🏛️',
+    'repeat': '🔄',
+    'plus': '➕',
+    'salary': '💼',
+    'shopping-cart': '🛒',
+    'utensils': '🍽️',
+    'shirt': '👕',
+    'stethoscope': '🩺',
+    'more-horizontal': '⋯',
+    'scissors': '✂️',
+    'car': '🚗',
+    'zap': '⚡',
+    'laptop': '💻',
+    'other-income': '➕',
+    // NEW mappings for system life areas
+    'briefcase': '💼',
+    'pound': '💰',
+    'heart': '❤️',
+    'sparkles': '✨',
+    'gamepad': '🎮',
+    'users': '👥',
 };
 
 function getEmojiDisplay(icon) {
