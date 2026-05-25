@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { get, post, del, fmt } from '../../utils/api.js';
+import { get, post, patch, del, fmt } from '../../utils/api.js';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
-const TABS = ['Overview', 'Transactions', 'Budgets', 'Accounts', 'Goals'];
+const TABS = ['Overview', 'Transactions', 'Recurring', 'Payees', 'Budgets', 'Accounts', 'Goals'];
 
 export default function Finance() {
   const [tab, setTab]               = useState('Overview');
@@ -11,6 +11,8 @@ export default function Finance() {
   const [categories, setCategories] = useState([]);
   const [budgets, setBudgets]       = useState([]);
   const [fGoals, setFGoals]         = useState([]);
+  const [payees, setPayees]         = useState([]);
+  const [recurring, setRecurring]   = useState([]);
   const [analytics, setAnalytics]   = useState(null);
   const [modal, setModal]           = useState(null);
   const [form, setForm]             = useState({});
@@ -18,12 +20,14 @@ export default function Finance() {
   const [filterType, setFilterType] = useState('');
 
   const load = async () => {
-    const [acc, txns, cats, bdg, fg, an] = await Promise.allSettled([
+    const [acc, txns, cats, bdg, fg, pay, rec, an] = await Promise.allSettled([
       get('/finance/accounts'),
       get('/finance/transactions?limit=200'),
       get('/finance/categories'),
       get('/finance/budgets'),
       get('/finance/financial-goals'),
+      get('/finance/payees'),
+      get('/finance/recurring'),
       get('/finance/analytics/summary'),
     ]);
     if (acc.value)  setAccounts(acc.value);
@@ -31,6 +35,8 @@ export default function Finance() {
     if (cats.value) setCategories(cats.value);
     if (bdg.value)  setBudgets(bdg.value);
     if (fg.value)   setFGoals(fg.value);
+    if (pay.value)  setPayees(pay.value);
+    if (rec.value)  setRecurring(rec.value);
     if (an.value)   setAnalytics(an.value);
   };
 
@@ -46,7 +52,13 @@ export default function Finance() {
   });
 
   const handleAddTransaction = async () => {
-    await post('/finance/transactions', form);
+    await post('/finance/transactions', {
+      ...form,
+      // ensure recurring fields are sane
+      recurring:           !!form.recurring,
+      recurring_interval:  form.recurring ? (form.recurring_interval || 'monthly') : null,
+      next_due:            form.recurring ? (form.next_due || form.date) : null,
+    });
     setModal(null); setForm({}); load();
   };
 
@@ -65,9 +77,31 @@ export default function Finance() {
     setModal(null); setForm({}); load();
   };
 
+  const handleAddPayee = async () => {
+    await post('/finance/payees', form);
+    setModal(null); setForm({}); load();
+  };
+
   const handleDeleteTxn = async (id) => {
     if (confirm('Delete transaction? This will reverse the account balance.')) {
       await del(`/finance/transactions/${id}`);
+      load();
+    }
+  };
+
+  const handlePauseRecurring = async (id) => {
+    await patch(`/finance/recurring/${id}/pause`, {});
+    load();
+  };
+
+  const handleResumeRecurring = async (id) => {
+    await patch(`/finance/recurring/${id}/resume`, {});
+    load();
+  };
+
+  const handleDeletePayee = async (id) => {
+    if (confirm('Delete payee? Linked transactions will keep but unlink.')) {
+      await del(`/finance/payees/${id}`);
       load();
     }
   };
@@ -108,7 +142,6 @@ export default function Finance() {
             {fmt.currency(totalBalance)}
           </div>
         </div>
-        {/* Show negative warning */}
         {totalBalance < 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--red)', fontSize: 13 }}>
             ⚠ Negative net worth
@@ -135,7 +168,7 @@ export default function Finance() {
         )}
       </div>
 
-      {/* ── Tabs — finance-tabs class handles mobile scroll ───────────────── */}
+      {/* ── Tabs ──────────────────────────────────────────────────────────── */}
       <div className="finance-tabs">
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
@@ -199,6 +232,24 @@ export default function Finance() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          {analytics.byPayee && analytics.byPayee.length > 0 && (
+            <div className="card">
+              <h3 style={{ marginBottom: 16, fontSize: 14, fontWeight: 600 }}>Top Payees</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {analytics.byPayee.slice(0, 8).map(p => (
+                  <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: 3, background: p.colour || '#6366f1', flexShrink: 0 }} />
+                      <span style={{ fontSize: 13 }}>{p.name}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({p.count})</span>
+                    </div>
+                    <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{fmt.currency(p.total)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -225,6 +276,7 @@ export default function Finance() {
                   <tr>
                     <th>Date</th>
                     <th>Description</th>
+                    <th className="hide-mobile">Payee</th>
                     <th className="hide-mobile">Category</th>
                     <th className="hide-mobile">Account</th>
                     <th>Amount</th>
@@ -238,10 +290,20 @@ export default function Finance() {
                         {fmt.dateShort(t.date)}
                       </td>
                       <td>
-                        <div style={{ fontWeight: 500 }}>{t.description || t.merchant || '—'}</div>
+                        <div style={{ fontWeight: 500 }}>
+                          {t.description || t.merchant || '—'}
+                          {t.recurring && (
+                            <span className="badge" style={{ marginLeft: 8, background: 'rgba(124,106,255,0.15)', color: 'var(--accent)', fontSize: 10 }}>
+                              ↻ recurring
+                            </span>
+                          )}
+                        </div>
                         {t.merchant && t.description && (
                           <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t.merchant}</div>
                         )}
+                      </td>
+                      <td className="hide-mobile" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        {t.payee_name || '—'}
                       </td>
                       <td className="hide-mobile">
                         {t.category_name && (
@@ -271,6 +333,109 @@ export default function Finance() {
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Recurring ─────────────────────────────────────────────────────── */}
+      {tab === 'Recurring' && (
+        <div>
+          <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--text-muted)' }}>
+            Recurring transactions are processed daily at 00:05. Pause to stop generating new entries; existing entries remain.
+          </div>
+          {recurring.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+              No recurring transactions yet. Tick the "Recurring" box when adding a transaction.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+              {recurring.map(r => {
+                const paused = !r.recurring;
+                return (
+                  <div key={r.id} className="card" style={{ opacity: paused ? 0.6 : 1, borderLeft: `4px solid ${paused ? 'var(--text-muted)' : (r.type === 'income' ? 'var(--green)' : 'var(--red)')}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{r.description || r.merchant || '—'}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          {r.payee_name || r.account_name}
+                        </div>
+                      </div>
+                      <div style={{
+                        fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-mono)',
+                        color: r.type === 'income' ? 'var(--green)' : 'var(--red)',
+                      }}>
+                        {r.type === 'income' ? '+' : '-'}{fmt.currency(Math.abs(r.amount))}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                      <span className="badge" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
+                        {r.recurring_interval || 'monthly'}
+                      </span>
+                      {r.category_name && (
+                        <span className="badge" style={{ background: (r.category_colour || '#6366f1') + '25', color: r.category_colour || '#6366f1' }}>
+                          {r.category_name}
+                        </span>
+                      )}
+                      {paused && (
+                        <span className="badge" style={{ background: 'rgba(255,181,71,0.15)', color: 'var(--amber)' }}>Paused</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                      Next due: <span style={{ color: 'var(--text-secondary)' }}>{r.next_due ? fmt.date(r.next_due) : '—'}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {paused ? (
+                        <button className="btn btn-ghost btn-sm" onClick={() => handleResumeRecurring(r.id)}>Resume</button>
+                      ) : (
+                        <button className="btn btn-ghost btn-sm" onClick={() => handlePauseRecurring(r.id)}>Pause</button>
+                      )}
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDeleteTxn(r.id)}>Delete</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Payees ────────────────────────────────────────────────────────── */}
+      {tab === 'Payees' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+            <button className="btn btn-primary" onClick={() => { setModal('payee'); setForm({ type: 'person', colour: '#6366f1' }); }}>
+              + Payee
+            </button>
+          </div>
+          {payees.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+              No payees yet. Add one to start tracking who you pay.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
+              {payees.map(p => (
+                <div key={p.id} className="card" style={{ borderLeft: `4px solid ${p.colour || '#6366f1'}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{p.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{p.type}</div>
+                    </div>
+                    <button className="btn-icon btn-sm" onClick={() => handleDeletePayee(p.id)}>×</button>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>
+                    {fmt.currency(p.total_spent || 0)}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {p.transaction_count || 0} transaction{p.transaction_count == 1 ? '' : 's'}
+                  </div>
+                  {p.notes && (
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                      {p.notes}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -416,10 +581,50 @@ export default function Finance() {
                 </select>
               </div>
             </div>
-            <div className="form-group">
-              <label className="form-label">Date (can be backdated)</label>
-              <input type="date" value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} />
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Payee (optional)</label>
+                <select value={form.payee_id || ''} onChange={e => setForm({ ...form, payee_id: e.target.value })}>
+                  <option value="">— None —</option>
+                  {payees.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Date (can be backdated)</label>
+                <input type="date" value={form.date || ''} onChange={e => setForm({ ...form, date: e.target.value })} />
+              </div>
             </div>
+
+            {/* ── Recurring section ───────────────────────────────────────── */}
+            <div style={{ padding: 12, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', marginBottom: 16 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={!!form.recurring}
+                  onChange={e => setForm({ ...form, recurring: e.target.checked })}
+                  style={{ width: 'auto' }}
+                />
+                Recurring transaction
+              </label>
+              {form.recurring && (
+                <div className="form-row" style={{ marginTop: 12 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Interval</label>
+                    <select value={form.recurring_interval || 'monthly'} onChange={e => setForm({ ...form, recurring_interval: e.target.value })}>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                      <option value="yearly">Yearly</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Next Due</label>
+                    <input type="date" value={form.next_due || form.date || ''} onChange={e => setForm({ ...form, next_due: e.target.value })} />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={handleAddTransaction}>Add</button>
@@ -519,6 +724,40 @@ export default function Finance() {
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={handleAddFGoal}>Add Goal</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal === 'payee' && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">Add Payee</div>
+            <div className="form-group">
+              <label className="form-label">Name</label>
+              <input placeholder="e.g. British Gas, John Smith" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Type</label>
+                <select value={form.type || 'person'} onChange={e => setForm({ ...form, type: e.target.value })}>
+                  <option value="person">Person</option>
+                  <option value="company">Company</option>
+                  <option value="service">Service</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Colour</label>
+                <input type="color" value={form.colour || '#6366f1'} onChange={e => setForm({ ...form, colour: e.target.value })} style={{ height: 38, padding: 4 }} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Notes (optional)</label>
+              <input placeholder="e.g. Energy supplier, monthly DD" value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleAddPayee}>Add Payee</button>
             </div>
           </div>
         </div>

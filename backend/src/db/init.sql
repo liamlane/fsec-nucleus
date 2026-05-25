@@ -237,3 +237,13 @@ INSERT INTO notebooks (name, colour, icon) VALUES
   ('Work', '#3b82f6', 'briefcase'),
   ('Ideas', '#f59e0b', 'lightbulb')
 ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS payees (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  type TEXT DEFAULT 'person' CHECK (type IN ('person','company','service')),
+  notes TEXT,
+  colour TEXT DEFAULT '#6366f1',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS payee_id UUID REFERENCES payees(id) ON DELETE SET NULL;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS next_due DATE;
