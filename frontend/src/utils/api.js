@@ -22,7 +22,19 @@ async function request(endpoint, options = {}) {
         const text = await res.text();
         throw new Error(text || `HTTP ${res.status}`);
     }
-    return res.json();
+    // Check for empty response (204 No Content or zero-length body)
+    const contentLength = res.headers.get('content-length');
+    if (res.status === 204 || (contentLength && contentLength === '0')) {
+        return null;
+    }
+    const text = await res.text();
+    if (!text) return null;
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        // If it's not JSON (e.g., plain text), return as is
+        return text;
+    }
 }
 
 export const get = (endpoint) => request(endpoint);
@@ -38,7 +50,6 @@ export const fmt = {
         const m = Math.floor((secs % 3600) / 60);
         return h ? `${h}h ${m}m` : `${m}m`;
     },
-    // ✅ Added currency formatter (GBP by default, matches app settings)
     currency: (amount, currencySymbol = '£') => {
         const num = Number(amount);
         if (isNaN(num)) return `${currencySymbol}0.00`;
