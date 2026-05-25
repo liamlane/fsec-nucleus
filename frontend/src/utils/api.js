@@ -38,4 +38,10 @@ export const fmt = {
         const m = Math.floor((secs % 3600) / 60);
         return h ? `${h}h ${m}m` : `${m}m`;
     },
+    // ✅ Added currency formatter (GBP by default, matches app settings)
+    currency: (amount, currencySymbol = '£') => {
+        const num = Number(amount);
+        if (isNaN(num)) return `${currencySymbol}0.00`;
+        return `${currencySymbol}${num.toFixed(2)}`;
+    },
 };
