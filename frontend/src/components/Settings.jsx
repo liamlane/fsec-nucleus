@@ -1,5 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { get, post, patch, del } from '../utils/api';
+
+// Predefined emoji list (categories: common, smileys, activities, objects, symbols)
+const EMOJI_LIST = [
+    // Common
+    '📌', '💡', '❤️', '⭐', '💰', '✨', '🎯', '🏆',
+    // Smileys & People
+    '😀', '😎', '🤔', '💪', '👤', '👥', '🧠', '💬',
+    // Activities
+    '🏃', '📚', '🎨', '🎵', '🎮', '🏋️', '🧘', '🚀',
+    // Objects
+    '💼', '📖', '💻', '📱', '⌚', '🔧', '🔨', '🏠',
+    // Nature & Food
+    '🌱', '🌲', '🍎', '🥗', '☕', '🍺', '🌙', '☀️',
+    // Symbols
+    '✅', '❌', '⚠️', '🔒', '🔓', '⚙️', '🔔', '📅',
+];
 
 export default function Settings() {
     const [activeTab, setActiveTab] = useState('prefs');
@@ -12,9 +28,10 @@ export default function Settings() {
     const [pinForm, setPinForm] = useState({ current: '', new: '', confirm: '' });
     const [pinResult, setPinResult] = useState(null);
     
-    // Modal state
-    const [modal, setModal] = useState(null); // { type: 'lifearea', item?: ... }
+    const [modal, setModal] = useState(null);
     const [modalForm, setModalForm] = useState({ name: '', colour: '#6366f1', icon: '' });
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const pickerRef = useRef(null);
 
     const loadPrefs = async () => {
         const data = await get('/settings/preferences');
@@ -46,6 +63,17 @@ export default function Settings() {
     useEffect(() => { if (activeTab === 'notebooks') loadNotebooks(); }, [activeTab]);
     useEffect(() => { if (activeTab === 'logs') loadLogs(); }, [activeTab, logFilter]);
 
+    // Close emoji picker when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (pickerRef.current && !pickerRef.current.contains(event.target)) {
+                setShowEmojiPicker(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     const updatePref = async (key, value) => {
         await patch('/settings/preferences', { [key]: value });
         setPrefs(prev => ({ ...prev, [key]: value }));
@@ -66,7 +94,6 @@ export default function Settings() {
         window.location.href = '/api/settings/export';
     };
 
-    // Modal helpers
     const openModal = (type, item = null) => {
         if (item) {
             setModalForm({ name: item.name, colour: item.colour || '#6366f1', icon: item.icon || '' });
@@ -79,11 +106,13 @@ export default function Settings() {
             setModalForm({ name: '', colour: '#6366f1', icon: defaultIcon });
             setModal({ type, item: null });
         }
+        setShowEmojiPicker(false);
     };
 
     const closeModal = () => {
         setModal(null);
         setModalForm({ name: '', colour: '#6366f1', icon: '' });
+        setShowEmojiPicker(false);
     };
 
     const handleModalSave = async () => {
@@ -100,14 +129,11 @@ export default function Settings() {
                 loadLifeAreas();
             }
         } else if (type === 'category') {
-            // For new category, also ask for type (income/expense). We'll add a select in modal JSX.
-            // Simplify: for now, just pass data including `type` if present.
             if (item) {
                 await patch(`/settings/categories/${item.id}`, data);
                 loadCategories();
             } else {
-                // We need to know income/expense – we'll add a field later
-                const categoryData = { ...data, type: 'expense' }; // default
+                const categoryData = { ...data, type: modalForm.type || 'expense' };
                 await post('/settings/categories', categoryData);
                 loadCategories();
             }
@@ -123,7 +149,15 @@ export default function Settings() {
         closeModal();
     };
 
-    // Render modal JSX (no useState inside)
+    const getEmojiDisplay = (icon) => {
+        if (!icon) return '📌';
+        // If it's already an emoji (contains multi-byte chars), return as is
+        if (/[\u{1F300}-\u{1F6FF}]/u.test(icon)) return icon;
+        // Simple map for common names (fallback)
+        const map = { lightbulb: '💡', user: '👤', briefcase: '💼', heart: '❤️', star: '⭐', book: '📖', film: '🎬', music: '🎵', gamepad: '🎮', pound: '💰', sparkles: '✨', 'pound-sterling': '💰', 'gamepad-2': '🎮' };
+        return map[icon.toLowerCase()] || icon;
+    };
+
     const renderModal = () => {
         if (!modal) return null;
         const { type, item } = modal;
@@ -131,7 +165,7 @@ export default function Settings() {
         const title = isEdit ? `Edit ${type}` : `Add ${type}`;
         return (
             <div className="modal-overlay" onClick={closeModal}>
-                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+                <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 450 }}>
                     <div className="modal-title">{title}</div>
                     <div className="form-group">
                         <label>Name</label>
@@ -151,8 +185,54 @@ export default function Settings() {
                         <input type="color" value={modalForm.colour} onChange={e => setModalForm({ ...modalForm, colour: e.target.value })} />
                     </div>
                     <div className="form-group">
-                        <label>Icon (emoji)</label>
-                        <input value={modalForm.icon} onChange={e => setModalForm({ ...modalForm, icon: e.target.value })} placeholder="📌" />
+                        <label>Icon</label>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <div style={{ fontSize: 28, width: 48, textAlign: 'center', background: 'var(--bg-secondary)', borderRadius: 8, padding: '4px' }}>
+                                {getEmojiDisplay(modalForm.icon)}
+                            </div>
+                            <button type="button" className="btn btn-ghost" onClick={() => setShowEmojiPicker(!showEmojiPicker)} style={{ fontSize: 20 }}>
+                                😀 Pick Emoji
+                            </button>
+                            <input
+                                placeholder="or type any text"
+                                value={modalForm.icon}
+                                onChange={e => setModalForm({ ...modalForm, icon: e.target.value })}
+                                style={{ flex: 1 }}
+                            />
+                        </div>
+                        {showEmojiPicker && (
+                            <div ref={pickerRef} style={{
+                                position: 'absolute',
+                                zIndex: 1001,
+                                background: 'var(--bg-card)',
+                                border: '1px solid var(--border)',
+                                borderRadius: 12,
+                                padding: 8,
+                                marginTop: 8,
+                                width: 280,
+                                maxHeight: 200,
+                                overflowY: 'auto',
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(8, 1fr)',
+                                gap: 6,
+                                boxShadow: '0 8px 20px rgba(0,0,0,0.2)'
+                            }}>
+                                {EMOJI_LIST.map(emoji => (
+                                    <button
+                                        key={emoji}
+                                        className="btn-icon"
+                                        onClick={() => {
+                                            setModalForm({ ...modalForm, icon: emoji });
+                                            setShowEmojiPicker(false);
+                                        }}
+                                        style={{ fontSize: 24, padding: 4, cursor: 'pointer' }}
+                                    >
+                                        {emoji}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <small style={{ fontSize: 11, color: 'var(--text-muted)' }}>Click the picker or type your own emoji/text.</small>
                     </div>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                         <button className="btn btn-ghost" onClick={closeModal}>Cancel</button>
@@ -220,7 +300,7 @@ export default function Settings() {
                         {lifeAreas.map(la => (
                             <div key={la.id} className="card" style={{ padding: 12, borderLeft: `4px solid ${la.colour}` }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span><span style={{ fontSize: 20 }}>{la.icon}</span> <strong>{la.name}</strong></span>
+                                    <span><span style={{ fontSize: 20 }}>{getEmojiDisplay(la.icon)}</span> <strong>{la.name}</strong></span>
                                     <div>
                                         <button className="btn-icon" onClick={() => openModal('lifearea', la)}>✎</button>
                                         <button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/life-areas/${la.id}`); loadLifeAreas(); } }}>×</button>
@@ -243,7 +323,7 @@ export default function Settings() {
                             {categories.filter(c => c.type === 'expense').map(cat => (
                                 <div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span><span>{cat.icon}</span> {cat.name}</span>
+                                        <span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span>
                                         <div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div>
                                     </div>
                                 </div>
@@ -254,7 +334,7 @@ export default function Settings() {
                             {categories.filter(c => c.type === 'income').map(cat => (
                                 <div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span><span>{cat.icon}</span> {cat.name}</span>
+                                        <span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span>
                                         <div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div>
                                     </div>
                                 </div>
@@ -272,7 +352,7 @@ export default function Settings() {
                         {notebooks.map(nb => (
                             <div key={nb.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${nb.colour}` }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span><span>{nb.icon}</span> {nb.name}</span>
+                                    <span><span style={{ fontSize: 16 }}>{getEmojiDisplay(nb.icon)}</span> {nb.name}</span>
                                     <div><button className="btn-icon" onClick={() => openModal('notebook', nb)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/notebooks/${nb.id}`); loadNotebooks(); } }}>×</button></div>
                                 </div>
                             </div>
