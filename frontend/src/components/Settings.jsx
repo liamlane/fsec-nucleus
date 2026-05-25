@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { get, post, patch, del } from '../../utils/api';
+import { get, post, patch, del } from '../utils/api';
 
 export default function Settings() {
     const [activeTab, setActiveTab] = useState('prefs');

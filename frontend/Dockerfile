@@ -5,6 +5,7 @@ RUN npm install --legacy-peer-deps
 COPY . .
 ARG VITE_API_URL=/api
 ENV VITE_API_URL=$VITE_API_URL
+RUN ls -la src/utils/
 RUN npm run build
 
 FROM nginx:alpine

@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useState } from 'react';
-import { get } from '../../utils/api';   // removed .js extension
+import { get } from '../utils/api';
 
 const NAV = [
   { to: '/',         label: 'Dashboard', icon: '⬡', exact: true },
@@ -17,10 +17,6 @@ const NAV = [
 
 function BottomNav() {
   const location = useLocation();
-  const isActive = (item) => {
-    if (item.exact) return location.pathname === item.to;
-    return location.pathname.startsWith(item.to);
-  };
   return (
     <nav className="bottom-nav">
       {NAV.map(item => (
@@ -28,8 +24,8 @@ function BottomNav() {
           key={item.to}
           to={item.to}
           end={item.exact}
-          className={({ isActive: navActive }) =>
-            `bottom-nav-item${navActive ? ' active' : ''}`
+          className={({ isActive }) =>
+            `bottom-nav-item${isActive ? ' active' : ''}`
           }
         >
           <span className="bottom-nav-icon">{item.icon}</span>
@@ -79,6 +75,7 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
+      {/* Sidebar */}
       <aside className="app-sidebar">
         <div style={{ padding: '20px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -155,6 +152,7 @@ export default function Layout() {
         </div>
       </aside>
 
+      {/* Main content */}
       <main className="app-main">
         <div style={{ padding: '12px 20px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 10 }}>
           <div style={{ position: 'relative', maxWidth: 400 }}>
