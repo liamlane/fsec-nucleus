@@ -1,82 +1,51 @@
-const jwt     = require('jsonwebtoken');
-const bcrypt  = require('bcryptjs');
-const express = require('express');
-const router  = express.Router();
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const { info, warn } = require('../utils/logger');
 
-// ── Fail hard if JWT_SECRET is absent or still at default ─────────────────
-// A missing or default secret means any attacker can forge valid tokens.
-const SECRET = process.env.JWT_SECRET;
-if (!SECRET || SECRET === 'dev-secret') {
-  console.error('[auth] FATAL: JWT_SECRET is not set or is using the default value.');
-  console.error('[auth] Set a secure random JWT_SECRET in .env and restart.');
-  process.exit(1);
+// In-memory store for the hash (in production, read from .env)
+const STORED_HASH = process.env.PIN_HASH;
+
+async function verifyPin(pin) {
+    if (!STORED_HASH) return true; // first run – any PIN works
+    return bcrypt.compare(String(pin), STORED_HASH);
 }
 
-// ── requireAuth middleware ────────────────────────────────────────────────
-const requireAuth = (req, res, next) => {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  try {
-    req.user = jwt.verify(auth.split(' ')[1], SECRET);
-    next();
-  } catch (err) {
-    // Distinguish expired from malformed — useful for frontend to decide
-    // whether to show "session expired" vs generic error
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Session expired', expired: true });
-    }
-    res.status(401).json({ error: 'Invalid token' });
-  }
-};
+const router = require('express').Router();
 
-// ── PIN login ─────────────────────────────────────────────────────────────
+// POST /auth/login
 router.post('/login', async (req, res) => {
-  const { pin } = req.body;
-  if (!pin) return res.status(400).json({ error: 'PIN required' });
-
-  // Validate format before hitting bcrypt
-  const pinStr = String(pin).trim();
-  if (!/^\d{4,8}$/.test(pinStr)) {
-    return res.status(400).json({ error: 'PIN must be 4–8 digits' });
-  }
-
-  const stored = process.env.PIN_HASH;
-
-  // First-run mode — no PIN configured yet
-  // Returns setupRequired so the frontend can redirect to PIN setup screen
-  if (!stored) {
-    const token = jwt.sign({ id: 'local-user', setup: true }, SECRET, { expiresIn: '1h' });
-    return res.json({ token, setupRequired: true });
-  }
-
-  const valid = await bcrypt.compare(pinStr, stored);
-  if (!valid) return res.status(401).json({ error: 'Incorrect PIN' });
-
-  const token = jwt.sign({ id: 'local-user' }, SECRET, { expiresIn: '30d' });
-  res.json({ token });
+    const { pin } = req.body;
+    const valid = await verifyPin(pin);
+    if (valid) {
+        const token = jwt.sign({ id: 'local-user' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+        info('auth', `Successful login from ${req.ip}`);
+        res.json({ token });
+    } else {
+        warn('auth', `Failed login attempt from ${req.ip}`);
+        res.status(401).json({ error: 'Invalid PIN' });
+    }
 });
 
-// ── Setup / change PIN ────────────────────────────────────────────────────
-// REQUIRES a valid token — either the 1h setup token from first-run
-// or a normal 30d session token.
-// Returns the hash to put in .env — does NOT auto-apply it,
-// so a restart is always required to activate a new PIN.
-router.post('/setup-pin', requireAuth, async (req, res) => {
-  const { pin } = req.body;
-  if (!pin) return res.status(400).json({ error: 'PIN required' });
-
-  const pinStr = String(pin).trim();
-  if (!/^\d{4,8}$/.test(pinStr)) {
-    return res.status(400).json({ error: 'PIN must be 4–8 digits' });
-  }
-
-  const hash = await bcrypt.hash(pinStr, 10);
-  res.json({
-    hash,
-    note: 'Add PIN_HASH to your .env file and restart the backend container to activate.',
-  });
+// POST /auth/setup-pin (optional, for generating hash)
+router.post('/setup-pin', async (req, res) => {
+    const { pin } = req.body;
+    if (!pin) return res.status(400).json({ error: 'PIN required' });
+    const hash = await bcrypt.hash(String(pin), 10);
+    res.json({ hash });
 });
+
+// Middleware to require authentication
+function requireAuth(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token provided' });
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+}
 
 module.exports = { router, requireAuth };

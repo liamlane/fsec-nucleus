@@ -39,6 +39,17 @@ app.use(cors({
 // ── Body parsing ──────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }));
 
+// After app.use(express.json(...))
+
+// Optional request logging (set LOG_REQUESTS=true in .env to enable)
+if (process.env.LOG_REQUESTS === 'true') {
+    const { info } = require('./utils/logger');
+    app.use((req, res, next) => {
+        info('http', `${req.method} ${req.path}`, { ip: req.ip, userAgent: req.get('User-Agent') });
+        next();
+    });
+}
+
 // ── Rate limiting on auth endpoint ────────────────────────────────────────
 const authLimiter = rateLimit({
   windowMs:        15 * 60 * 1000,

@@ -1,35 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { get, post, patch, del } from '../utils/api';
 
-// Comprehensive emoji list – includes all from your screenshot + many more
+// Comprehensive emoji list
 const EMOJI_LIST = [
-    // Finance & Money
     '💰', '💵', '💷', '💶', '💳', '🏦', '📈', '📉', 'piggy-bank', 'landmark', 'repeat', 'plus', 'salary',
-    // Shopping & Goods
     '🛒', '🛍️', 'shopping-cart', 'utensils', '🍔', '🍕', '🥗', '🍎', '🥛', '🍺', '☕', '🧃',
-    // Clothing
     '👕', '👖', '👗', '👔', '👟', '👠', '🧥', '🧦', '🩳', '🩴',
-    // Home & Utilities
     '🏠', '🔌', '💡', '🔧', '🔨', '🧹', '🧺', '🚿', '🛏️', '🪑', '📺', '❄️', '🔥', '💧',
-    // Health & Personal
     '🏥', '🩺', '💊', '🧪', '🩹', '🧘', '🏃', '🚴', '🏋️', '🥗', '🍎', '🥦', '🧃',
-    // Transport & Car
     '🚗', '🚕', '🚌', '🚲', '🛵', '⛽', '🚆', '✈️', '🚢', '🚁', '🛴',
-    // Work & Freelance
     '💼', '💻', '🖥️', '📱', '📞', '✉️', '📎', '🗂️', '📊', '📅', '⏰', '🤝', '🎯',
-    // Subscriptions & Services
     '🔄', '📺', '🎬', '🎵', '📰', '📚', '📖', '🎮', '🧾', '📝', '🔁',
-    // Misc / Other
     '❓', '❗', '🔹', '🔸', '📌', '⭐', '❤️', '✨', '⚙️', '🔒', '🔓', '✅', '❌',
-    // Smileys & People
     '😀', '😎', '🤔', '😢', '😡', '😍', '🥳', '😴', '💪', '🧠', '👤', '👥', '👶', '🧓',
-    // Nature
     '🌱', '🌲', '🌳', '🍃', '🌺', '🌞', '🌙', '☀️', '🌈', '⛅',
-    // Activities & Hobbies
     '🎨', '🎭', '🎤', '🎧', '🎸', '🏀', '⚽', '🎾', '🏈', '🏐', '🎲', '🧩', '🎮',
 ];
 
-// Map old text-only names to emoji (for backward compatibility)
 const textToEmoji = {
     'piggy-bank': '🐷', 'landmark': '🏛️', 'repeat': '🔄', 'plus': '➕', 'salary': '💼',
     'shopping-cart': '🛒', 'utensils': '🍽️', 'shirt': '👕', 'stethoscope': '🩺',
@@ -39,12 +26,9 @@ const textToEmoji = {
 
 function getEmojiDisplay(icon) {
     if (!icon) return '📌';
-    // If already an emoji (multi-byte), return as is
     if (/[\u{1F300}-\u{1F6FF}]/u.test(icon)) return icon;
-    // Try mapping from text name
     const lower = icon.toLowerCase();
     if (textToEmoji[lower]) return textToEmoji[lower];
-    // Fallback to the original string (maybe it's a short name)
     return icon;
 }
 
@@ -120,8 +104,30 @@ export default function Settings() {
         }
     };
 
-    const exportData = () => {
-        window.location.href = '/api/settings/export';
+    // Fixed export function using fetch with token
+    const exportData = async () => {
+        const token = localStorage.getItem('nucleus_token');
+        if (!token) {
+            alert('Not authenticated');
+            return;
+        }
+        try {
+            const response = await fetch('/api/settings/export', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error('Export failed');
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `nucleus_export_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert(err.message);
+        }
     };
 
     const openModal = (type, item = null) => {
@@ -254,7 +260,7 @@ export default function Settings() {
                                 ))}
                             </div>
                         )}
-                        <small style={{ fontSize: 11, color: 'var(--text-muted)' }}>Click an emoji to use it, or type your own (supports both emojis and text names).</small>
+                        <small style={{ fontSize: 11, color: 'var(--text-muted)' }}>Click an emoji to use it, or type your own.</small>
                     </div>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
                         <button className="btn btn-ghost" onClick={closeModal}>Cancel</button>
@@ -282,24 +288,9 @@ export default function Settings() {
             {/* Preferences */}
             {activeTab === 'prefs' && (
                 <div className="card" style={{ maxWidth: 500 }}>
-                    <div className="form-group">
-                        <label>Currency</label>
-                        <select value={prefs.currency} onChange={e => updatePref('currency', e.target.value)}>
-                            <option>GBP</option><option>USD</option><option>EUR</option><option>JPY</option><option>CAD</option><option>AUD</option>
-                        </select>
-                    </div>
-                    <div className="form-group">
-                        <label>First day of week</label>
-                        <select value={prefs.first_day_of_week} onChange={e => updatePref('first_day_of_week', e.target.value)}>
-                            <option value="0">Sunday</option><option value="1">Monday</option>
-                        </select>
-                    </div>
-                    <div className="form-group">
-                        <label>Date format</label>
-                        <select value={prefs.date_format} onChange={e => updatePref('date_format', e.target.value)}>
-                            <option>en-GB</option><option>en-US</option>
-                        </select>
-                    </div>
+                    <div className="form-group"><label>Currency</label><select value={prefs.currency} onChange={e => updatePref('currency', e.target.value)}><option>GBP</option><option>USD</option><option>EUR</option><option>JPY</option><option>CAD</option><option>AUD</option></select></div>
+                    <div className="form-group"><label>First day of week</label><select value={prefs.first_day_of_week} onChange={e => updatePref('first_day_of_week', e.target.value)}><option value="0">Sunday</option><option value="1">Monday</option></select></div>
+                    <div className="form-group"><label>Date format</label><select value={prefs.date_format} onChange={e => updatePref('date_format', e.target.value)}><option>en-GB</option><option>en-US</option></select></div>
                 </div>
             )}
 
@@ -316,106 +307,39 @@ export default function Settings() {
 
             {/* Life Areas */}
             {activeTab === 'lifeareas' && (
-                <div>
-                    <button className="btn btn-primary btn-sm" onClick={() => openModal('lifearea')}>+ Add Life Area</button>
-                    <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
-                        {lifeAreas.map(la => (
-                            <div key={la.id} className="card" style={{ padding: 12, borderLeft: `4px solid ${la.colour}` }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span><span style={{ fontSize: 20 }}>{getEmojiDisplay(la.icon)}</span> <strong>{la.name}</strong></span>
-                                    <div>
-                                        <button className="btn-icon" onClick={() => openModal('lifearea', la)}>✎</button>
-                                        <button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/life-areas/${la.id}`); loadLifeAreas(); } }}>×</button>
-                                    </div>
-                                </div>
-                                {!la.user_managed && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>system</span>}
-                            </div>
-                        ))}
-                    </div>
-                </div>
+                <div><button className="btn btn-primary btn-sm" onClick={() => openModal('lifearea')}>+ Add Life Area</button>
+                <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
+                    {lifeAreas.map(la => (<div key={la.id} className="card" style={{ padding: 12, borderLeft: `4px solid ${la.colour}` }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span><span style={{ fontSize: 20 }}>{getEmojiDisplay(la.icon)}</span> <strong>{la.name}</strong></span><div><button className="btn-icon" onClick={() => openModal('lifearea', la)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/life-areas/${la.id}`); loadLifeAreas(); } }}>×</button></div></div>{!la.user_managed && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>system</span>}</div>))}
+                </div></div>
             )}
 
             {/* Categories */}
             {activeTab === 'categories' && (
-                <div>
-                    <button className="btn btn-primary btn-sm" onClick={() => openModal('category')}>+ Add Category</button>
-                    <div style={{ marginTop: 16 }}>
-                        <h3>Expense</h3>
-                        <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
-                            {categories.filter(c => c.type === 'expense').map(cat => (
-                                <div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span>
-                                        <div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <h3 style={{ marginTop: 20 }}>Income</h3>
-                        <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
-                            {categories.filter(c => c.type === 'income').map(cat => (
-                                <div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span>
-                                        <div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
+                <div><button className="btn btn-primary btn-sm" onClick={() => openModal('category')}>+ Add Category</button>
+                <div style={{ marginTop: 16 }}><h3>Expense</h3><div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
+                    {categories.filter(c => c.type === 'expense').map(cat => (<div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span><div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div></div></div>))}
+                </div><h3 style={{ marginTop: 20 }}>Income</h3><div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
+                    {categories.filter(c => c.type === 'income').map(cat => (<div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span><span style={{ fontSize: 16 }}>{getEmojiDisplay(cat.icon)}</span> {cat.name}</span><div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div></div></div>))}
+                </div></div></div>
             )}
 
             {/* Notebooks */}
             {activeTab === 'notebooks' && (
-                <div>
-                    <button className="btn btn-primary btn-sm" onClick={() => openModal('notebook')}>+ Add Notebook</button>
-                    <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
-                        {notebooks.map(nb => (
-                            <div key={nb.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${nb.colour}` }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span><span style={{ fontSize: 16 }}>{getEmojiDisplay(nb.icon)}</span> {nb.name}</span>
-                                    <div><button className="btn-icon" onClick={() => openModal('notebook', nb)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/notebooks/${nb.id}`); loadNotebooks(); } }}>×</button></div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+                <div><button className="btn btn-primary btn-sm" onClick={() => openModal('notebook')}>+ Add Notebook</button>
+                <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
+                    {notebooks.map(nb => (<div key={nb.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${nb.colour}` }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><span><span style={{ fontSize: 16 }}>{getEmojiDisplay(nb.icon)}</span> {nb.name}</span><div><button className="btn-icon" onClick={() => openModal('notebook', nb)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/notebooks/${nb.id}`); loadNotebooks(); } }}>×</button></div></div></div>))}
+                </div></div>
             )}
 
             {/* Logs */}
             {activeTab === 'logs' && (
-                <div>
-                    <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-                        <select value={logFilter.level} onChange={e => setLogFilter({...logFilter, level: e.target.value})}>
-                            <option value="">All levels</option><option>info</option><option>warn</option><option>error</option>
-                        </select>
-                        <input placeholder="Module" value={logFilter.module} onChange={e => setLogFilter({...logFilter, module: e.target.value})} />
-                    </div>
-                    <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-                        <table style={{ width: '100%', fontSize: 12 }}>
-                            <thead><tr><th>Time</th><th>Level</th><th>Module</th><th>Message</th></tr></thead>
-                            <tbody>
-                                {logs.logs.map(l => (
-                                    <tr key={l.id}>
-                                        <td>{new Date(l.created_at).toLocaleString()}</td>
-                                        <td style={{ color: l.level === 'error' ? '#ef4444' : l.level === 'warn' ? '#f59e0b' : '#10b981' }}>{l.level}</td>
-                                        <td>{l.module}</td>
-                                        <td>{l.message}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <div><div style={{ display: 'flex', gap: 12, marginBottom: 16 }}><select value={logFilter.level} onChange={e => setLogFilter({...logFilter, level: e.target.value})}><option value="">All levels</option><option>info</option><option>warn</option><option>error</option></select><input placeholder="Module" value={logFilter.module} onChange={e => setLogFilter({...logFilter, module: e.target.value})} /></div>
+                <div className="card" style={{ padding: 0, overflowX: 'auto' }}><table style={{ width: '100%', fontSize: 12 }}><thead><tr><th>Time</th><th>Level</th><th>Module</th><th>Message</th></tr></thead><tbody>{logs.logs.map(l => (<tr key={l.id}><td>{new Date(l.created_at).toLocaleString()}</td><td style={{ color: l.level === 'error' ? '#ef4444' : l.level === 'warn' ? '#f59e0b' : '#10b981' }}>{l.level}</td><td>{l.module}</td><td>{l.message}</td></tr>))}</tbody></table></div></div>
             )}
 
             {/* Export */}
             {activeTab === 'export' && (
-                <div className="card">
-                    <button className="btn btn-primary" onClick={exportData}>Download all data as JSON</button>
-                    <p className="text-muted" style={{ marginTop: 12, fontSize: 12 }}>Export includes all accounts, transactions, goals, habits, notes, journal, time entries, and wellness data.</p>
-                </div>
+                <div className="card"><button className="btn btn-primary" onClick={exportData}>Download all data as JSON</button><p className="text-muted" style={{ marginTop: 12, fontSize: 12 }}>Export includes all accounts, transactions, goals, habits, notes, journal, time entries, and wellness data.</p></div>
             )}
 
             {renderModal()}

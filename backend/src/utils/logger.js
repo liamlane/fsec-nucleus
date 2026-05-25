@@ -11,7 +11,6 @@ async function log(level, module, message, meta = null) {
     }
 }
 
-// Convenience methods
 const info = (module, message, meta) => log('info', module, message, meta);
 const warn = (module, message, meta) => log('warn', module, message, meta);
 const error = (module, message, meta) => log('error', module, message, meta);

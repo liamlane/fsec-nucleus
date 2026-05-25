@@ -4,8 +4,8 @@ const db = require('../db/pool');
 
 // ── Notebooks ─────────────────────────────────
 router.get('/notebooks', async (req, res) => {
-  const { rows } = await db.query('SELECT n.*, (SELECT COUNT(*) FROM notes nt WHERE nt.notebook_id = n.id) as note_count FROM notebooks n ORDER BY n.name');
-  res.json(rows);
+    const { rows } = await db.query('SELECT * FROM notebooks WHERE is_deleted = false ORDER BY name');
+    res.json(rows);
 });
 
 router.post('/notebooks', async (req, res) => {
