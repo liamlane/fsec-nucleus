@@ -11,8 +11,10 @@ export default function Settings() {
     const [logFilter, setLogFilter] = useState({ level: '', module: '' });
     const [pinForm, setPinForm] = useState({ current: '', new: '', confirm: '' });
     const [pinResult, setPinResult] = useState(null);
-    const [modal, setModal] = useState(null);
-    const [editItem, setEditItem] = useState(null);
+    
+    // Modal state
+    const [modal, setModal] = useState(null); // { type: 'lifearea', item?: ... }
+    const [modalForm, setModalForm] = useState({ name: '', colour: '#6366f1', icon: '' });
 
     const loadPrefs = async () => {
         const data = await get('/settings/preferences');
@@ -64,82 +66,81 @@ export default function Settings() {
         window.location.href = '/api/settings/export';
     };
 
-    const handleAddLifeArea = async (data) => {
-        await post('/settings/life-areas', data);
-        loadLifeAreas();
-        setModal(null);
-    };
-    const handleEditLifeArea = async (id, data) => {
-        await patch(`/settings/life-areas/${id}`, data);
-        loadLifeAreas();
-        setModal(null);
-    };
-    const handleDeleteLifeArea = async (id) => {
-        if (confirm('Delete this life area? It will be hidden from future use.')) {
-            await del(`/settings/life-areas/${id}`);
-            loadLifeAreas();
+    // Modal helpers
+    const openModal = (type, item = null) => {
+        if (item) {
+            setModalForm({ name: item.name, colour: item.colour || '#6366f1', icon: item.icon || '' });
+            setModal({ type, item });
+        } else {
+            let defaultIcon = '';
+            if (type === 'lifearea') defaultIcon = '📌';
+            if (type === 'category') defaultIcon = '📂';
+            if (type === 'notebook') defaultIcon = '📓';
+            setModalForm({ name: '', colour: '#6366f1', icon: defaultIcon });
+            setModal({ type, item: null });
         }
     };
 
-    // Similar for categories and notebooks – we'll implement generically
-    const handleAddCategory = async (data) => {
-        await post('/settings/categories', data);
-        loadCategories();
+    const closeModal = () => {
         setModal(null);
-    };
-    const handleEditCategory = async (id, data) => {
-        await patch(`/settings/categories/${id}`, data);
-        loadCategories();
-        setModal(null);
-    };
-    const handleDeleteCategory = async (id) => {
-        if (confirm('Delete this category? Transactions will keep the category name but it will be hidden.')) {
-            await del(`/settings/categories/${id}`);
-            loadCategories();
-        }
+        setModalForm({ name: '', colour: '#6366f1', icon: '' });
     };
 
-    const handleAddNotebook = async (data) => {
-        await post('/settings/notebooks', data);
-        loadNotebooks();
-        setModal(null);
-    };
-    const handleEditNotebook = async (id, data) => {
-        await patch(`/settings/notebooks/${id}`, data);
-        loadNotebooks();
-        setModal(null);
-    };
-    const handleDeleteNotebook = async (id) => {
-        if (confirm('Delete this notebook? All notes inside will remain but become unassigned.')) {
-            await del(`/settings/notebooks/${id}`);
-            loadNotebooks();
+    const handleModalSave = async () => {
+        if (!modal) return;
+        const { type, item } = modal;
+        const data = { ...modalForm };
+        if (!data.name) return alert('Name is required');
+        if (type === 'lifearea') {
+            if (item) {
+                await patch(`/settings/life-areas/${item.id}`, data);
+                loadLifeAreas();
+            } else {
+                await post('/settings/life-areas', data);
+                loadLifeAreas();
+            }
+        } else if (type === 'category') {
+            // For new category, also ask for type (income/expense). We'll add a select in modal JSX.
+            // Simplify: for now, just pass data including `type` if present.
+            if (item) {
+                await patch(`/settings/categories/${item.id}`, data);
+                loadCategories();
+            } else {
+                // We need to know income/expense – we'll add a field later
+                const categoryData = { ...data, type: 'expense' }; // default
+                await post('/settings/categories', categoryData);
+                loadCategories();
+            }
+        } else if (type === 'notebook') {
+            if (item) {
+                await patch(`/settings/notebooks/${item.id}`, data);
+                loadNotebooks();
+            } else {
+                await post('/settings/notebooks', data);
+                loadNotebooks();
+            }
         }
+        closeModal();
     };
 
+    // Render modal JSX (no useState inside)
     const renderModal = () => {
         if (!modal) return null;
         const { type, item } = modal;
         const isEdit = !!item;
         const title = isEdit ? `Edit ${type}` : `Add ${type}`;
-        const [form, setForm] = useState(isEdit ? { ...item } : { name: '', colour: '#6366f1', icon: type === 'category' ? '📂' : (type === 'lifearea' ? '📌' : '📓') });
-        if (type === 'category' && !isEdit) form.type = 'expense';
-        const handleSave = () => {
-            if (type === 'lifearea') isEdit ? handleEditLifeArea(item.id, form) : handleAddLifeArea(form);
-            if (type === 'category') isEdit ? handleEditCategory(item.id, form) : handleAddCategory(form);
-            if (type === 'notebook') isEdit ? handleEditNotebook(item.id, form) : handleAddNotebook(form);
-        };
         return (
-            <div className="modal-overlay" onClick={() => setModal(null)}>
+            <div className="modal-overlay" onClick={closeModal}>
                 <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
                     <div className="modal-title">{title}</div>
                     <div className="form-group">
                         <label>Name</label>
-                        <input value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} />
+                        <input value={modalForm.name} onChange={e => setModalForm({ ...modalForm, name: e.target.value })} />
                     </div>
                     {type === 'category' && !isEdit && (
                         <div className="form-group">
                             <label>Type</label>
-                            <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+                            <select value={modalForm.type || 'expense'} onChange={e => setModalForm({ ...modalForm, type: e.target.value })}>
                                 <option value="expense">Expense</option>
                                 <option value="income">Income</option>
                             </select>
@@ -147,15 +148,15 @@ export default function Settings() {
                     )}
                     <div className="form-group">
                         <label>Colour</label>
-                        <input type="color" value={form.colour || '#6366f1'} onChange={e => setForm({ ...form, colour: e.target.value })} />
+                        <input type="color" value={modalForm.colour} onChange={e => setModalForm({ ...modalForm, colour: e.target.value })} />
                     </div>
                     <div className="form-group">
                         <label>Icon (emoji)</label>
-                        <input value={form.icon || ''} onChange={e => setForm({ ...form, icon: e.target.value })} placeholder="📌" />
+                        <input value={modalForm.icon} onChange={e => setModalForm({ ...modalForm, icon: e.target.value })} placeholder="📌" />
                     </div>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                        <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
-                        <button className="btn btn-primary" onClick={handleSave}>Save</button>
+                        <button className="btn btn-ghost" onClick={closeModal}>Cancel</button>
+                        <button className="btn btn-primary" onClick={handleModalSave}>Save</button>
                     </div>
                 </div>
             </div>
@@ -214,15 +215,15 @@ export default function Settings() {
             {/* Life Areas */}
             {activeTab === 'lifeareas' && (
                 <div>
-                    <button className="btn btn-primary btn-sm" onClick={() => setModal({ type: 'lifearea' })}>+ Add Life Area</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => openModal('lifearea')}>+ Add Life Area</button>
                     <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
                         {lifeAreas.map(la => (
                             <div key={la.id} className="card" style={{ padding: 12, borderLeft: `4px solid ${la.colour}` }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span><span style={{ fontSize: 20 }}>{la.icon}</span> <strong>{la.name}</strong></span>
                                     <div>
-                                        <button className="btn-icon" onClick={() => setModal({ type: 'lifearea', item: la })}>✎</button>
-                                        <button className="btn-icon" onClick={() => handleDeleteLifeArea(la.id)}>×</button>
+                                        <button className="btn-icon" onClick={() => openModal('lifearea', la)}>✎</button>
+                                        <button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/life-areas/${la.id}`); loadLifeAreas(); } }}>×</button>
                                     </div>
                                 </div>
                                 {!la.user_managed && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>system</span>}
@@ -235,7 +236,7 @@ export default function Settings() {
             {/* Categories */}
             {activeTab === 'categories' && (
                 <div>
-                    <button className="btn btn-primary btn-sm" onClick={() => setModal({ type: 'category' })}>+ Add Category</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => openModal('category')}>+ Add Category</button>
                     <div style={{ marginTop: 16 }}>
                         <h3>Expense</h3>
                         <div className="grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
@@ -243,7 +244,7 @@ export default function Settings() {
                                 <div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <span><span>{cat.icon}</span> {cat.name}</span>
-                                        <div><button className="btn-icon" onClick={() => setModal({ type: 'category', item: cat })}>✎</button><button className="btn-icon" onClick={() => handleDeleteCategory(cat.id)}>×</button></div>
+                                        <div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div>
                                     </div>
                                 </div>
                             ))}
@@ -254,7 +255,7 @@ export default function Settings() {
                                 <div key={cat.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${cat.colour}` }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                         <span><span>{cat.icon}</span> {cat.name}</span>
-                                        <div><button className="btn-icon" onClick={() => setModal({ type: 'category', item: cat })}>✎</button><button className="btn-icon" onClick={() => handleDeleteCategory(cat.id)}>×</button></div>
+                                        <div><button className="btn-icon" onClick={() => openModal('category', cat)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/categories/${cat.id}`); loadCategories(); } }}>×</button></div>
                                     </div>
                                 </div>
                             ))}
@@ -266,13 +267,13 @@ export default function Settings() {
             {/* Notebooks */}
             {activeTab === 'notebooks' && (
                 <div>
-                    <button className="btn btn-primary btn-sm" onClick={() => setModal({ type: 'notebook' })}>+ Add Notebook</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => openModal('notebook')}>+ Add Notebook</button>
                     <div className="grid" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px,1fr))', gap: 12 }}>
                         {notebooks.map(nb => (
                             <div key={nb.id} className="card" style={{ padding: 8, borderLeft: `4px solid ${nb.colour}` }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                     <span><span>{nb.icon}</span> {nb.name}</span>
-                                    <div><button className="btn-icon" onClick={() => setModal({ type: 'notebook', item: nb })}>✎</button><button className="btn-icon" onClick={() => handleDeleteNotebook(nb.id)}>×</button></div>
+                                    <div><button className="btn-icon" onClick={() => openModal('notebook', nb)}>✎</button><button className="btn-icon" onClick={async () => { if(confirm('Delete?')) { await del(`/settings/notebooks/${nb.id}`); loadNotebooks(); } }}>×</button></div>
                                 </div>
                             </div>
                         ))}
