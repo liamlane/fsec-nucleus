@@ -1,12 +1,27 @@
 // frontend/src/utils/api.js
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
+function getToken() {
+    return localStorage.getItem('nucleus_token');
+}
+
 async function request(endpoint, options = {}) {
+    const token = getToken();
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+    };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
     const res = await fetch(`${API_BASE}${endpoint}`, {
         ...options,
-        headers: { 'Content-Type': 'application/json', ...options.headers },
+        headers,
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+    }
     return res.json();
 }
 
