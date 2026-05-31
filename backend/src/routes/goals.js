@@ -6,8 +6,13 @@ const asyncHandler = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
 // ── Life Areas ────────────────────────────────────────────────────────────
+// Filters out soft-deleted areas (is_deleted = true)
 router.get('/life-areas', asyncHandler(async (req, res) => {
-  const { rows } = await db.query('SELECT * FROM life_areas ORDER BY name');
+  const { rows } = await db.query(
+    `SELECT * FROM life_areas
+     WHERE COALESCE(is_deleted, false) = false
+     ORDER BY name`
+  );
   res.json(rows);
 }));
 
@@ -15,7 +20,7 @@ router.post('/life-areas', asyncHandler(async (req, res) => {
   const { name, colour, icon } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
   const { rows } = await db.query(
-    'INSERT INTO life_areas (name,colour,icon) VALUES ($1,$2,$3) RETURNING *',
+    'INSERT INTO life_areas (name,colour,icon,user_managed) VALUES ($1,$2,$3,true) RETURNING *',
     [name, colour || '#6366f1', icon || 'compass']
   );
   res.status(201).json(rows[0]);
@@ -35,7 +40,7 @@ router.patch('/life-areas/:id', asyncHandler(async (req, res) => {
 }));
 
 router.delete('/life-areas/:id', asyncHandler(async (req, res) => {
-  await db.query('DELETE FROM life_areas WHERE id=$1', [req.params.id]);
+  await db.query('UPDATE life_areas SET is_deleted=true WHERE id=$1', [req.params.id]);
   res.status(204).end();
 }));
 
@@ -86,7 +91,6 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   const updates = fields.filter(f => req.body[f] !== undefined);
   if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
   const sets = updates.map((f, i) => `${f}=$${i + 1}`).join(',');
-  // Append completed_at only when marking as completed — static string, not user input
   const extra = req.body.status === 'completed' ? ', completed_at=NOW()' : '';
   const { rows } = await db.query(
     `UPDATE goals SET ${sets}${extra} WHERE id=$${updates.length + 1} RETURNING *`,
@@ -99,6 +103,38 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 router.delete('/:id', asyncHandler(async (req, res) => {
   await db.query('DELETE FROM goals WHERE id=$1', [req.params.id]);
   res.status(204).end();
+}));
+
+// ══════════════════════════════════════════════════════════════════════════
+// STAGE 4 BUG FIX: linked habits + time projects
+// Goals.jsx calls these endpoints — they were missing entirely
+// ══════════════════════════════════════════════════════════════════════════
+router.get('/:id/habits', asyncHandler(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT h.*,
+       (SELECT COUNT(*) FROM habit_logs hl
+        WHERE hl.habit_id = h.id AND hl.completed = true) AS total_completions
+     FROM habits h
+     WHERE h.goal_id = $1 AND h.active = true
+     ORDER BY h.created_at`,
+    [req.params.id]
+  );
+  res.json(rows);
+}));
+
+router.get('/:id/time-projects', asyncHandler(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT tp.*,
+       COALESCE(SUM(te.duration_seconds), 0) AS total_seconds,
+       COUNT(te.id) AS entry_count
+     FROM time_projects tp
+     LEFT JOIN time_entries te ON te.project_id = tp.id
+     WHERE tp.goal_id = $1
+     GROUP BY tp.id
+     ORDER BY tp.name`,
+    [req.params.id]
+  );
+  res.json(rows);
 }));
 
 // ── Milestones ────────────────────────────────────────────────────────────

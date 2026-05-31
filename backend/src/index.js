@@ -10,6 +10,9 @@ const habitsRouter  = require('./routes/habits');
 const contentRouter = require('./routes/content');
 const searchRouter  = require('./routes/search');
 const settingsRouter = require('./routes/settings');
+const gcalRouter     = require('./routes/gcal');
+
+const { info } = require('./utils/logger');
 
 const app = express();
 
@@ -39,15 +42,12 @@ app.use(cors({
 // ── Body parsing ──────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }));
 
-// After app.use(express.json(...))
-
-// Optional request logging (set LOG_REQUESTS=true in .env to enable)
+// ── Optional request logging (set LOG_REQUESTS=true in .env to enable)
 if (process.env.LOG_REQUESTS === 'true') {
-    const { info } = require('./utils/logger');
-    app.use((req, res, next) => {
-        info('http', `${req.method} ${req.path}`, { ip: req.ip, userAgent: req.get('User-Agent') });
-        next();
-    });
+  app.use((req, res, next) => {
+    info('http', `${req.method} ${req.path}`, { ip: req.ip, userAgent: req.get('User-Agent') });
+    next();
+  });
 }
 
 // ── Rate limiting on auth endpoint ────────────────────────────────────────
@@ -71,9 +71,12 @@ app.use('/auth', authRouter);
 app.use('/finance', requireAuth, financeRouter);
 app.use('/goals',   requireAuth, goalsRouter);
 app.use('/habits',  requireAuth, habitsRouter);
-app.use('/',        requireAuth, contentRouter);
+app.use('/',        requireAuth, contentRouter);      // notes, journal, etc.
 app.use('/search',  requireAuth, searchRouter);
 app.use('/settings', requireAuth, settingsRouter);
+
+// ── Google Calendar routes (some public, some protected – we protect sync/disconnect inside the router)
+app.use('/', gcalRouter);   // mounts /auth/google, /auth/google/callback, /gcal/status, /gcal/sync, /gcal/disconnect
 
 // ── Global error handler ──────────────────────────────────────────────────
 app.use((err, req, res, next) => {
@@ -86,4 +89,7 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Nucleus API running on :${PORT}`));
+app.listen(PORT, async () => {
+  console.log(`Nucleus API running on :${PORT}`);
+  await info('system', 'Nucleus backend started', { version: '1.8' });
+});

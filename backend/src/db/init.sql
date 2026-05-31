@@ -344,3 +344,34 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+-- ════════════════════════════════════════════════════════════════════
+-- STAGE 3 (RETROFITTED): WELLNESS & SUBSTANCE TRACKING
+-- All statements use IF NOT EXISTS — safe to re-run.
+-- ════════════════════════════════════════════════════════════════════
+
+ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS is_checkin BOOLEAN DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS substances (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name              TEXT NOT NULL,
+    unit              TEXT,
+    colour            TEXT DEFAULT '#6366f1',
+    abstinence_mode   BOOLEAN DEFAULT FALSE,
+    abstinence_since  DATE,
+    active            BOOLEAN DEFAULT TRUE,
+    notes             TEXT,
+    created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS substance_logs (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    substance_id UUID REFERENCES substances(id) ON DELETE CASCADE,
+    date         DATE NOT NULL DEFAULT CURRENT_DATE,
+    quantity     NUMERIC(12,2),
+    notes        TEXT,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_substance_logs_substance ON substance_logs(substance_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_substances_active        ON substances(active) WHERE active = true;
