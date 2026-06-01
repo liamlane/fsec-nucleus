@@ -30,6 +30,7 @@
   --radius: 12px;
   --radius-sm: 8px;
   --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 40px rgba(0,0,0,0.6);
   --font: 'Space Grotesk', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
@@ -108,6 +109,13 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
+}
+
+/* ── Card grid ───────────────────────────────────────────────────────────── */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
@@ -271,6 +279,7 @@ tr:hover td { background: var(--bg-hover); }
 
 .app-sidebar {
   width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
@@ -282,10 +291,84 @@ tr:hover td { background: var(--bg-hover); }
 
 .app-main {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg-primary);
   padding: var(--main-padding);
+}
+
+/* ── App header ──────────────────────────────────────────────────────────── */
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.drawer-toggle {
+  display: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 20px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.drawer-overlay {
+  display: none;
+}
+
+/* ── Sidebar nav ─────────────────────────────────────────────────────────── */
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  transition: var(--transition);
+  white-space: nowrap;
+  overflow: hidden;
+  text-decoration: none;
+}
+
+.sidebar-nav a:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-nav a.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.nav-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  line-height: 1;
+}
+
+.nav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Bottom nav (hidden on desktop) ─────────────────────────────────────── */
@@ -365,8 +448,32 @@ tr:hover td { background: var(--bg-hover); }
     --main-padding: 16px;
   }
 
-  /* Hide desktop sidebar */
-  .app-sidebar { display: none; }
+  /* Hide desktop sidebar, show as drawer */
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform var(--transition);
+    z-index: 150;
+  }
+
+  .app-sidebar.open {
+    transform: translateX(0);
+  }
+
+  /* Drawer overlay */
+  .drawer-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 140;
+  }
+
+  /* Show drawer toggle */
+  .drawer-toggle { display: flex; }
 
   /* Show bottom nav */
   .bottom-nav {
@@ -405,18 +512,11 @@ tr:hover td { background: var(--bg-hover); }
     min-height: 44px;
   }
 
-  .bottom-nav-item.active {
-    color: var(--accent);
-  }
-
+  .bottom-nav-item.active { color: var(--accent); }
   .bottom-nav-item.active .bottom-nav-icon {
     filter: drop-shadow(0 0 4px var(--accent-glow));
   }
-
-  .bottom-nav-icon {
-    font-size: 20px;
-    line-height: 1;
-  }
+  .bottom-nav-icon { font-size: 20px; line-height: 1; }
 
   /* Push content above bottom nav */
   .app-main {
@@ -434,6 +534,7 @@ tr:hover td { background: var(--bg-hover); }
   .dashboard-split { grid-template-columns: 1fr; gap: 12px; }
   .two-col-layout   { grid-template-columns: 1fr; }
   .two-col-layout-wide { grid-template-columns: 1fr; }
+  .card-grid { grid-template-columns: 1fr; }
 
   /* Form rows stack */
   .form-row { grid-template-columns: 1fr; }
@@ -471,7 +572,6 @@ tr:hover td { background: var(--bg-hover); }
     width: 100%;
     height: 100%;
   }
-  /* Show/hide note panels on mobile */
   .notes-sidebar.mobile-hidden { display: none; }
   .notes-editor.mobile-hidden  { display: none; }
 
