@@ -377,7 +377,6 @@ CREATE INDEX IF NOT EXISTS idx_substances_active        ON substances(active) WH
 
 -- ════════════════════════════════════════════════════════════════════
 -- STAGE 5: BUSINESS MANAGEMENT (Fast Lane Technology)
--- Clients, projects, quotes, invoices, expenses
 -- ════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS business_clients (
@@ -389,6 +388,7 @@ CREATE TABLE IF NOT EXISTS business_clients (
     address      TEXT,
     website      TEXT,
     status       TEXT DEFAULT 'lead' CHECK (status IN ('lead','prospect','active','dormant','lost')),
+    client_type  TEXT DEFAULT 'commercial' CHECK (client_type IN ('commercial','residential')),
     hourly_rate  NUMERIC(10,2),
     notes        TEXT,
     tags         TEXT[],
@@ -463,7 +463,18 @@ CREATE TABLE IF NOT EXISTS business_expenses (
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS business_client_interactions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id   UUID REFERENCES business_clients(id) ON DELETE CASCADE,
+    type        TEXT NOT NULL CHECK (type IN ('call','email','meeting','message','note','other')),
+    date        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    summary     TEXT NOT NULL,
+    notes       TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_business_clients_status   ON business_clients(status) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_business_clients_type     ON business_clients(client_type) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_business_projects_client  ON business_projects(client_id);
 CREATE INDEX IF NOT EXISTS idx_business_projects_status  ON business_projects(status) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_business_invoices_status  ON business_invoices(status);
@@ -472,8 +483,12 @@ CREATE INDEX IF NOT EXISTS idx_business_invoices_due     ON business_invoices(du
 CREATE INDEX IF NOT EXISTS idx_business_quotes_status    ON business_quotes(status);
 CREATE INDEX IF NOT EXISTS idx_business_quotes_client    ON business_quotes(client_id);
 CREATE INDEX IF NOT EXISTS idx_business_expenses_date    ON business_expenses(date DESC);
+CREATE INDEX IF NOT EXISTS idx_interactions_client       ON business_client_interactions(client_id, date DESC);
 
 INSERT INTO app_settings (key, value) VALUES ('business_name', '"Fast Lane Technology"'::jsonb) ON CONFLICT DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES
+    ('business_profile', '{"name":"Fast Lane Technology","tagline":"","address":"","email":"","phone":"","website":"","vat_number":"","company_number":"","bank_name":"","bank_account_name":"","bank_sort_code":"","bank_account_number":"","bank_iban":"","payment_terms":"Payment due within 30 days of invoice date. Late payments may incur charges as per the Late Payment of Commercial Debts (Interest) Act 1998."}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
 
 -- ════════════════════════════════════════════════════════════════════
 -- STAGE 6: MARKETING & SOCIAL CONTENT
@@ -535,27 +550,12 @@ CREATE INDEX IF NOT EXISTS idx_social_posts_scheduled   ON social_posts(schedule
 CREATE INDEX IF NOT EXISTS idx_social_posts_campaign    ON social_posts(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_content_ideas_used       ON content_ideas(used) WHERE used = false;
 
--- Seed starter templates for a tech consultancy
 INSERT INTO post_templates (name, category, template, platforms, is_seeded) VALUES
-    ('Quick Tech Tip', 'tip',
-     E'💡 Pro tip for {audience}:\n\n{tip}\n\nWhy it matters: {why_it_matters}\n\n#{tag1} #{tag2}',
-     ARRAY['linkedin','twitter'], true),
-    ('Project Win', 'case_study',
-     E'Just wrapped up a {project_type} for a {client_type}.\n\nThe challenge: {challenge}\n\nThe outcome: {outcome}\n\nLesson learnt: {lesson}',
-     ARRAY['linkedin'], true),
-    ('Behind The Scenes', 'behind_the_scenes',
-     E'Here''s what {timeframe} looks like at {company}:\n\n{description}\n\n{takeaway}',
-     ARRAY['linkedin','instagram'], true),
-    ('Industry Insight', 'industry_insight',
-     E'I''ve been seeing {observation} across {industry} recently.\n\nMy take: {insight}\n\nWhat are you seeing?',
-     ARRAY['linkedin','twitter'], true),
-    ('Milestone', 'milestone',
-     E'{emoji} {milestone}\n\n{reflection}\n\nWhat''s next: {next_step}',
-     ARRAY['linkedin','twitter','instagram'], true),
-    ('Hot Take Question', 'question',
-     E'{provocative_statement}\n\nDo you agree?\n\n→ {position_a}\n→ {position_b}\n\nLet me know in the comments.',
-     ARRAY['linkedin','twitter'], true),
-    ('How-To Thread Opener', 'tutorial',
-     E'How to {achieve_outcome} in {timeframe}:\n\nA thread 🧵\n\n1/ {first_point}',
-     ARRAY['twitter','linkedin'], true)
+    ('Quick Tech Tip', 'tip', E'💡 Pro tip for {audience}:\n\n{tip}\n\nWhy it matters: {why_it_matters}\n\n#{tag1} #{tag2}', ARRAY['linkedin','twitter'], true),
+    ('Project Win', 'case_study', E'Just wrapped up a {project_type} for a {client_type}.\n\nThe challenge: {challenge}\n\nThe outcome: {outcome}\n\nLesson learnt: {lesson}', ARRAY['linkedin'], true),
+    ('Behind The Scenes', 'behind_the_scenes', E'Here''s what {timeframe} looks like at {company}:\n\n{description}\n\n{takeaway}', ARRAY['linkedin','instagram'], true),
+    ('Industry Insight', 'industry_insight', E'I''ve been seeing {observation} across {industry} recently.\n\nMy take: {insight}\n\nWhat are you seeing?', ARRAY['linkedin','twitter'], true),
+    ('Milestone', 'milestone', E'{emoji} {milestone}\n\n{reflection}\n\nWhat''s next: {next_step}', ARRAY['linkedin','twitter','instagram'], true),
+    ('Hot Take Question', 'question', E'{provocative_statement}\n\nDo you agree?\n\n→ {position_a}\n→ {position_b}\n\nLet me know in the comments.', ARRAY['linkedin','twitter'], true),
+    ('How-To Thread Opener', 'tutorial', E'How to {achieve_outcome} in {timeframe}:\n\nA thread 🧵\n\n1/ {first_point}', ARRAY['twitter','linkedin'], true)
 ON CONFLICT DO NOTHING;

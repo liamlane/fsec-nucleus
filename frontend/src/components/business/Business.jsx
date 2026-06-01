@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { get, post, patch, del, fmt } from '../../utils/api.js';
 
-const TABS = ['Dashboard', 'Clients', 'Projects', 'Quotes', 'Invoices', 'Expenses'];
+const TABS = ['Dashboard', 'Clients', 'Projects', 'Quotes', 'Invoices', 'Expenses', 'Profile'];
 
 const CLIENT_STATUS = {
   lead:     { label: 'Lead',     colour: '#6b7280' },
@@ -35,40 +35,88 @@ const QUOTE_STATUS = {
   expired:  { label: 'Expired',  colour: '#f59e0b' },
 };
 
-const EXPENSE_CATEGORIES = [
-  'Travel', 'Software', 'Equipment', 'Professional fees',
-  'Marketing', 'Utilities', 'Office', 'Subsistence', 'Other',
-];
+const EXPENSE_CATEGORIES = ['Travel','Software','Equipment','Professional fees','Marketing','Utilities','Office','Subsistence','Other'];
+
+const INTERACTION_TYPES = {
+  call:    { label: 'Call',    icon: '📞' },
+  email:   { label: 'Email',   icon: '✉️' },
+  meeting: { label: 'Meeting', icon: '🤝' },
+  message: { label: 'Message', icon: '💬' },
+  note:    { label: 'Note',    icon: '📝' },
+  other:   { label: 'Other',   icon: '◇' },
+};
+
+// Authorisation token for inline PDF fetches (since iframe/window.open can't send headers)
+const apiBase   = '/api';
+const getToken  = () => localStorage.getItem('nucleus_token') || '';
 
 export default function Business() {
-  const [tab, setTab]           = useState('Dashboard');
-  const [dashboard, setDashboard] = useState(null);
-  const [clients, setClients]   = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [quotes, setQuotes]     = useState([]);
-  const [invoices, setInvoices] = useState([]);
-  const [expenses, setExpenses] = useState([]);
-  const [modal, setModal]       = useState(null);
-  const [form, setForm]         = useState({});
-  const [editing, setEditing]   = useState(null);
+  const [tab, setTab]               = useState('Dashboard');
+  const [dashboard, setDashboard]   = useState(null);
+  const [clients, setClients]       = useState([]);
+  const [clientTypeFilter, setClientTypeFilter] = useState('');
+  const [projects, setProjects]     = useState([]);
+  const [quotes, setQuotes]         = useState([]);
+  const [invoices, setInvoices]     = useState([]);
+  const [expenses, setExpenses]     = useState([]);
+  const [profile, setProfile]       = useState(null);
+  const [modal, setModal]           = useState(null);
+  const [form, setForm]             = useState({});
+  const [editing, setEditing]       = useState(null);
+  // Interactions panel state
+  const [interactionsClient, setInteractionsClient] = useState(null);
+  const [interactions, setInteractions]             = useState([]);
 
   const today = new Date().toISOString().split('T')[0];
 
   const loadDashboard = async () => { const d = await get('/business/dashboard'); if (d) setDashboard(d); };
-  const loadClients   = async () => { const d = await get('/business/clients');   if (d) setClients(d); };
-  const loadProjects  = async () => { const d = await get('/business/projects');  if (d) setProjects(d); };
-  const loadQuotes    = async () => { const d = await get('/business/quotes');    if (d) setQuotes(d); };
-  const loadInvoices  = async () => { const d = await get('/business/invoices');  if (d) setInvoices(d); };
-  const loadExpenses  = async () => { const d = await get('/business/expenses');  if (d) setExpenses(d); };
+  const loadClients   = async () => {
+    const url = clientTypeFilter ? `/business/clients?client_type=${clientTypeFilter}` : '/business/clients';
+    const d = await get(url); if (d) setClients(d);
+  };
+  const loadProjects  = async () => { const d = await get('/business/projects'); if (d) setProjects(d); };
+  const loadQuotes    = async () => { const d = await get('/business/quotes');   if (d) setQuotes(d); };
+  const loadInvoices  = async () => { const d = await get('/business/invoices'); if (d) setInvoices(d); };
+  const loadExpenses  = async () => { const d = await get('/business/expenses'); if (d) setExpenses(d); };
+  const loadProfile   = async () => { const d = await get('/business/profile');  if (d) setProfile(d); };
 
   useEffect(() => { loadDashboard(); loadClients(); loadProjects(); }, []);
+  useEffect(() => { loadClients(); }, [clientTypeFilter]);
   useEffect(() => {
     if (tab === 'Dashboard') loadDashboard();
     if (tab === 'Quotes')    loadQuotes();
     if (tab === 'Invoices')  loadInvoices();
     if (tab === 'Expenses')  loadExpenses();
+    if (tab === 'Profile')   loadProfile();
   }, [tab]);
 
+  // ── Line item helpers ──────────────────────────────────────────────────
+  const addLineItem = () => {
+    const items = [...(form.line_items || []), { description: '', quantity: 1, rate: 0, amount: 0 }];
+    setForm({ ...form, line_items: items });
+  };
+  const updateLineItem = (idx, field, value) => {
+    const items = [...(form.line_items || [])];
+    items[idx] = { ...items[idx], [field]: value };
+    if (field === 'quantity' || field === 'rate') {
+      const q = parseFloat(items[idx].quantity || 0);
+      const r = parseFloat(items[idx].rate || 0);
+      items[idx].amount = (q * r).toFixed(2);
+    }
+    const subtotal = items.reduce((s, li) => s + parseFloat(li.amount || 0), 0);
+    setForm({ ...form, line_items: items, amount: subtotal.toFixed(2) });
+  };
+  const removeLineItem = (idx) => {
+    const items = form.line_items.filter((_, i) => i !== idx);
+    const subtotal = items.reduce((s, li) => s + parseFloat(li.amount || 0), 0);
+    setForm({ ...form, line_items: items, amount: subtotal.toFixed(2) });
+  };
+  const applyVAT = (rate = 0.20) => {
+    const amt = parseFloat(form.amount || 0);
+    setForm({ ...form, vat_amount: (amt * rate).toFixed(2) });
+  };
+
+  // ── Save / delete handlers ─────────────────────────────────────────────
   const saveItem = async (kind) => {
     const endpoint = `/business/${kind}`;
     if (editing) {
@@ -123,21 +171,79 @@ export default function Business() {
 
   const openEdit = (kind, item) => {
     setEditing({ kind, ...item });
-    setForm({ ...item });
+    setForm({ ...item, line_items: item.line_items || [] });
     setModal(kind);
   };
+
+  // PDF download — auth header required, so we fetch the blob ourselves
+  const openPDF = async (kind, id, number) => {
+    try {
+      const resp = await fetch(`${apiBase}/business/${kind}/${id}/pdf`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!resp.ok) throw new Error('Could not generate PDF');
+      const blob = await resp.blob();
+      const url  = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      // Revoke after a delay so the new tab has time to grab it
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e) {
+      alert('PDF generation failed: ' + e.message);
+    }
+  };
+
+  // ── Interactions handlers ──────────────────────────────────────────────
+  const openInteractions = async (client) => {
+    setInteractionsClient(client);
+    const data = await get(`/business/clients/${client.id}/interactions`);
+    if (data) setInteractions(data);
+    setModal('interactions');
+  };
+
+  const addInteraction = async () => {
+    await post(`/business/clients/${interactionsClient.id}/interactions`, form);
+    setForm({});
+    const data = await get(`/business/clients/${interactionsClient.id}/interactions`);
+    if (data) setInteractions(data);
+    loadClients(); // refresh last_interaction
+  };
+
+  const deleteInteraction = async (id) => {
+    if (!confirm('Delete this interaction?')) return;
+    await del(`/business/interactions/${id}`);
+    const data = await get(`/business/clients/${interactionsClient.id}/interactions`);
+    if (data) setInteractions(data);
+    loadClients();
+  };
+
+  // ── Profile handlers ───────────────────────────────────────────────────
+  const updateProfileField = (field, value) => {
+    setProfile({ ...profile, [field]: value });
+  };
+  const saveProfile = async () => {
+    await patch('/business/profile', profile);
+    alert('Business profile saved. PDFs will use these details going forward.');
+  };
+
+  // ── Computed totals for modals ─────────────────────────────────────────
+  const modalTotal = useMemo(() => {
+    return parseFloat(form.amount || 0) + parseFloat(form.vat_amount || 0);
+  }, [form.amount, form.vat_amount]);
 
   return (
     <div className="page animate-fade">
       <div className="page-header">
-        <div>
-          <h1 className="page-title">Business</h1>
-          <p className="page-subtitle">Clients · projects · quotes · invoices</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <img src="/logo.png" alt="FLT" style={{ width: 38, height: 38, borderRadius: 6, border: '1px solid var(--border)' }} />
+          <div>
+            <h1 className="page-title">Business</h1>
+            <p className="page-subtitle">{profile?.name || 'Fast Lane Technology'}</p>
+          </div>
         </div>
-        {tab === 'Clients'  && <button className="btn btn-primary" onClick={() => { setForm({ status: 'lead', colour: '#6366f1' }); setEditing(null); setModal('clients'); }}>+ Client</button>}
+        {tab === 'Clients'  && <button className="btn btn-primary" onClick={() => { setForm({ status: 'lead', client_type: 'commercial', colour: '#6366f1' }); setEditing(null); setModal('clients'); }}>+ Client</button>}
         {tab === 'Projects' && <button className="btn btn-primary" onClick={() => { setForm({ status: 'active', billing_type: 'fixed' }); setEditing(null); setModal('projects'); }}>+ Project</button>}
-        {tab === 'Quotes'   && <button className="btn btn-primary" onClick={() => { setForm({ status: 'draft', issue_date: today, vat_amount: 0, valid_until: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0] }); setEditing(null); setModal('quotes'); }}>+ Quote</button>}
-        {tab === 'Invoices' && <button className="btn btn-primary" onClick={() => { setForm({ status: 'draft', issue_date: today, vat_amount: 0 }); setEditing(null); setModal('invoices'); }}>+ Invoice</button>}
+        {tab === 'Quotes'   && <button className="btn btn-primary" onClick={() => { setForm({ status: 'draft', issue_date: today, vat_amount: 0, valid_until: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0], line_items: [] }); setEditing(null); setModal('quotes'); }}>+ Quote</button>}
+        {tab === 'Invoices' && <button className="btn btn-primary" onClick={() => { setForm({ status: 'draft', issue_date: today, vat_amount: 0, line_items: [] }); setEditing(null); setModal('invoices'); }}>+ Invoice</button>}
         {tab === 'Expenses' && <button className="btn btn-primary" onClick={() => { setForm({ date: today, claimable: true, vat_amount: 0 }); setEditing(null); setModal('expenses'); }}>+ Expense</button>}
       </div>
 
@@ -154,79 +260,114 @@ export default function Business() {
 
       {/* DASHBOARD */}
       {tab === 'Dashboard' && dashboard && (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
-            <div className="card" style={{ borderLeft: '4px solid var(--amber)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Outstanding invoiced</div>
-              <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--amber)' }}>{fmt.currency(dashboard.outstanding_invoiced)}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{dashboard.overdue_invoices} overdue</div>
-            </div>
-            <div className="card" style={{ borderLeft: '4px solid var(--green)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>MTD income</div>
-              <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{fmt.currency(dashboard.mtd_income)}</div>
-            </div>
-            <div className="card" style={{ borderLeft: '4px solid var(--red)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>MTD expenses</div>
-              <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{fmt.currency(dashboard.mtd_expenses)}</div>
-            </div>
-            <div className="card" style={{ borderLeft: `4px solid ${dashboard.mtd_net >= 0 ? 'var(--green)' : 'var(--red)'}` }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>MTD net</div>
-              <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)', color: dashboard.mtd_net >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt.currency(dashboard.mtd_net)}</div>
-            </div>
-            <div className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Open quotes</div>
-              <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{fmt.currency(dashboard.open_quotes_value)}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{dashboard.open_quotes_count} pending</div>
-            </div>
-            <div className="card">
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Active projects</div>
-              <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{dashboard.active_projects}</div>
-            </div>
-            <div className="card">
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Pipeline</div>
-              <div style={{ fontSize: 13, marginTop: 4 }}>
-                {Object.entries(CLIENT_STATUS).map(([k, v]) => (
-                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
-                    <span style={{ color: v.colour }}>{v.label}</span>
-                    <span style={{ fontFamily: 'var(--font-mono)' }}>{dashboard.client_counts[k] || 0}</span>
-                  </div>
-                ))}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
+          <div className="card" style={{ borderLeft: '4px solid var(--amber)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Outstanding invoiced</div>
+            <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--amber)' }}>{fmt.currency(dashboard.outstanding_invoiced)}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{dashboard.overdue_invoices} overdue</div>
+          </div>
+          <div className="card" style={{ borderLeft: '4px solid var(--green)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>MTD income</div>
+            <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--green)' }}>{fmt.currency(dashboard.mtd_income)}</div>
+          </div>
+          <div className="card" style={{ borderLeft: '4px solid var(--red)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>MTD expenses</div>
+            <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--red)' }}>{fmt.currency(dashboard.mtd_expenses)}</div>
+          </div>
+          <div className="card" style={{ borderLeft: `4px solid ${dashboard.mtd_net >= 0 ? 'var(--green)' : 'var(--red)'}` }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>MTD net</div>
+            <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)', color: dashboard.mtd_net >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt.currency(dashboard.mtd_net)}</div>
+          </div>
+          <div className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Open quotes</div>
+            <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{fmt.currency(dashboard.open_quotes_value)}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{dashboard.open_quotes_count} pending</div>
+          </div>
+          <div className="card">
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Active projects</div>
+            <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{dashboard.active_projects}</div>
+          </div>
+          <div className="card">
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Client mix</div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                <span>Commercial</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{dashboard.type_counts?.commercial || 0}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                <span>Residential</span>
+                <span style={{ fontFamily: 'var(--font-mono)' }}>{dashboard.type_counts?.residential || 0}</span>
               </div>
             </div>
           </div>
-        </>
+          <div className="card">
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Pipeline</div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>
+              {Object.entries(CLIENT_STATUS).map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                  <span style={{ color: v.colour }}>{v.label}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{dashboard.client_counts[k] || 0}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* CLIENTS */}
       {tab === 'Clients' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-          {clients.map(c => {
-            const status = CLIENT_STATUS[c.status] || CLIENT_STATUS.lead;
-            return (
-              <div key={c.id} className="card" style={{ borderLeft: `4px solid ${c.colour || status.colour}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{c.company || c.name}</div>
-                    {c.company && c.name && c.name !== c.company && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.name}</div>}
+        <>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'var(--bg-secondary)', borderRadius: 10, padding: 4, width: 'fit-content' }}>
+            {[{v:'',l:'All'},{v:'commercial',l:'Commercial'},{v:'residential',l:'Residential'}].map(o => (
+              <button key={o.v || 'all'} onClick={() => setClientTypeFilter(o.v)} style={{
+                padding: '5px 14px', borderRadius: 7, fontSize: 12,
+                background: clientTypeFilter === o.v ? 'var(--bg-card)' : 'transparent',
+                color: clientTypeFilter === o.v ? 'var(--text-primary)' : 'var(--text-muted)',
+                border: 'none', cursor: 'pointer',
+              }}>{o.l}</button>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 16 }}>
+            {clients.map(c => {
+              const status = CLIENT_STATUS[c.status] || CLIENT_STATUS.lead;
+              const daysSince = c.last_interaction
+                ? Math.floor((Date.now() - new Date(c.last_interaction)) / 86400000)
+                : null;
+              return (
+                <div key={c.id} className="card" style={{ borderLeft: `4px solid ${c.colour || status.colour}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{c.company || c.name}</div>
+                      {c.company && c.name && c.name !== c.company && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.name}</div>}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                      <span className="badge" style={{ background: status.colour + '25', color: status.colour }}>{status.label}</span>
+                      <span className="badge" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)', fontSize: 9, textTransform: 'capitalize' }}>{c.client_type || 'commercial'}</span>
+                    </div>
                   </div>
-                  <span className="badge" style={{ background: status.colour + '25', color: status.colour }}>{status.label}</span>
+                  {c.email && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.email}</div>}
+                  {c.phone && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.phone}</div>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, fontSize: 12 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>{c.project_count} project{c.project_count == 1 ? '' : 's'}</span>
+                    {parseFloat(c.outstanding) > 0 && <span style={{ color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>{fmt.currency(c.outstanding)} owed</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                    {daysSince != null
+                      ? `Last contact: ${daysSince === 0 ? 'today' : `${daysSince}d ago`} · ${c.interaction_count} logged`
+                      : `No contact logged${c.interaction_count > 0 ? ` (${c.interaction_count} entries)` : ''}`}
+                  </div>
+                  {c.hourly_rate && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>£{c.hourly_rate}/hr</div>}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => openInteractions(c)}>💬 Interactions</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit('clients', c)}>Edit</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => deleteItem('clients', c.id)}>Delete</button>
+                  </div>
                 </div>
-                {c.email && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.email}</div>}
-                {c.phone && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.phone}</div>}
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, fontSize: 12 }}>
-                  <span style={{ color: 'var(--text-muted)' }}>{c.project_count} project{c.project_count == 1 ? '' : 's'}</span>
-                  {parseFloat(c.outstanding) > 0 && <span style={{ color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>{fmt.currency(c.outstanding)} outstanding</span>}
-                </div>
-                {c.hourly_rate && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>£{c.hourly_rate}/hr</div>}
-                <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => openEdit('clients', c)}>Edit</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => deleteItem('clients', c.id)}>Delete</button>
-                </div>
-              </div>
-            );
-          })}
-          {clients.length === 0 && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No clients yet. Add your first lead.</div>}
-        </div>
+              );
+            })}
+            {clients.length === 0 && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No clients{clientTypeFilter ? ` of type "${clientTypeFilter}"` : ''} yet.</div>}
+          </div>
+        </>
       )}
 
       {/* PROJECTS */}
@@ -284,6 +425,7 @@ export default function Business() {
                       {q.converted_to_invoice_id && <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginTop: 2 }}>↪ invoiced</span>}
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn-icon btn-sm" title="View PDF" onClick={() => openPDF('quotes', q.id, q.quote_number)}>📄</button>
                       {canConvert && <button className="btn btn-ghost btn-sm" style={{ marginRight: 4 }} onClick={() => convertQuote(q.id)}>→ Invoice</button>}
                       <button className="btn-icon btn-sm" onClick={() => openEdit('quotes', q)}>✎</button>
                       <button className="btn-icon btn-sm" onClick={() => deleteItem('quotes', q.id)}>×</button>
@@ -316,6 +458,7 @@ export default function Business() {
                     <td style={{ fontSize: 12, color: i.status === 'overdue' ? 'var(--red)' : 'var(--text-muted)' }}>{i.due_date ? fmt.dateShort(i.due_date) : '—'}</td>
                     <td><span className="badge" style={{ background: status.colour + '25', color: status.colour }}>{status.label}</span></td>
                     <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn-icon btn-sm" title="View PDF" onClick={() => openPDF('invoices', i.id, i.invoice_number)}>📄</button>
                       {i.status !== 'paid' && i.status !== 'cancelled' && <button className="btn btn-ghost btn-sm" style={{ marginRight: 4 }} onClick={() => markInvoicePaid(i.id)}>Mark paid</button>}
                       <button className="btn-icon btn-sm" onClick={() => openEdit('invoices', i)}>✎</button>
                       <button className="btn-icon btn-sm" onClick={() => deleteItem('invoices', i.id)}>×</button>
@@ -353,11 +496,93 @@ export default function Business() {
         </div>
       )}
 
+      {/* PROFILE */}
+      {tab === 'Profile' && profile && (
+        <div style={{ maxWidth: 720 }}>
+          <div className="card" style={{ marginBottom: 16, padding: 16, background: 'rgba(124,106,255,0.08)', border: '1px solid rgba(124,106,255,0.25)' }}>
+            <div style={{ fontSize: 13 }}>
+              These details are used to populate your invoice and quote PDFs. Make sure your bank details and VAT number are correct before sending anything to a client.
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '20px 0 10px' }}>Company</h3>
+          <div className="card">
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">Company name</label>
+                <input value={profile.name || ''} onChange={e => updateProfileField('name', e.target.value)} /></div>
+              <div className="form-group"><label className="form-label">Tagline (shows in PDF header)</label>
+                <input value={profile.tagline || ''} onChange={e => updateProfileField('tagline', e.target.value)} placeholder="e.g. Network & infrastructure consultancy" /></div>
+            </div>
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">Email</label>
+                <input type="email" value={profile.email || ''} onChange={e => updateProfileField('email', e.target.value)} /></div>
+              <div className="form-group"><label className="form-label">Phone</label>
+                <input value={profile.phone || ''} onChange={e => updateProfileField('phone', e.target.value)} /></div>
+            </div>
+            <div className="form-group"><label className="form-label">Website</label>
+              <input value={profile.website || ''} onChange={e => updateProfileField('website', e.target.value)} /></div>
+            <div className="form-group"><label className="form-label">Address</label>
+              <textarea rows={3} value={profile.address || ''} onChange={e => updateProfileField('address', e.target.value)} placeholder="Line 1&#10;Line 2&#10;City, Postcode" /></div>
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">VAT number</label>
+                <input value={profile.vat_number || ''} onChange={e => updateProfileField('vat_number', e.target.value)} placeholder="GB123456789" /></div>
+              <div className="form-group"><label className="form-label">Company number</label>
+                <input value={profile.company_number || ''} onChange={e => updateProfileField('company_number', e.target.value)} /></div>
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '20px 0 10px' }}>Bank details</h3>
+          <div className="card">
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">Bank name</label>
+                <input value={profile.bank_name || ''} onChange={e => updateProfileField('bank_name', e.target.value)} /></div>
+              <div className="form-group"><label className="form-label">Account holder name</label>
+                <input value={profile.bank_account_name || ''} onChange={e => updateProfileField('bank_account_name', e.target.value)} /></div>
+            </div>
+            <div className="form-row">
+              <div className="form-group"><label className="form-label">Sort code</label>
+                <input value={profile.bank_sort_code || ''} onChange={e => updateProfileField('bank_sort_code', e.target.value)} placeholder="XX-XX-XX" /></div>
+              <div className="form-group"><label className="form-label">Account number</label>
+                <input value={profile.bank_account_number || ''} onChange={e => updateProfileField('bank_account_number', e.target.value)} /></div>
+            </div>
+            <div className="form-group"><label className="form-label">IBAN (optional)</label>
+              <input value={profile.bank_iban || ''} onChange={e => updateProfileField('bank_iban', e.target.value)} /></div>
+          </div>
+
+          <h3 style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '20px 0 10px' }}>Payment terms</h3>
+          <div className="card">
+            <div className="form-group">
+              <label className="form-label">Default terms text (shown on every invoice)</label>
+              <textarea rows={3} value={profile.payment_terms || ''} onChange={e => updateProfileField('payment_terms', e.target.value)} />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn btn-primary" onClick={saveProfile}>Save profile</button>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────── MODALS ─────────────────────────── */}
+
       {/* CLIENT MODAL */}
       {modal === 'clients' && (
         <div className="modal-overlay" onClick={() => { setModal(null); setEditing(null); }}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-title">{editing ? 'Edit client' : 'New client'}</div>
+            <div className="form-group">
+              <label className="form-label">Type *</label>
+              <div style={{ display: 'flex', gap: 4, background: 'var(--bg-secondary)', borderRadius: 8, padding: 3 }}>
+                {[{v:'commercial',l:'Commercial'},{v:'residential',l:'Residential'}].map(o => (
+                  <button key={o.v} onClick={() => setForm({ ...form, client_type: o.v })} style={{
+                    flex: 1, padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 500,
+                    background: (form.client_type || 'commercial') === o.v ? 'var(--bg-card)' : 'transparent',
+                    color: (form.client_type || 'commercial') === o.v ? 'var(--text-primary)' : 'var(--text-muted)',
+                    border: 'none', cursor: 'pointer',
+                  }}>{o.l}</button>
+                ))}
+              </div>
+            </div>
             <div className="form-row">
               <div className="form-group"><label className="form-label">Name *</label><input value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
               <div className="form-group"><label className="form-label">Company</label><input value={form.company || ''} onChange={e => setForm({ ...form, company: e.target.value })} /></div>
@@ -421,16 +646,19 @@ export default function Business() {
         </div>
       )}
 
-      {/* QUOTE MODAL */}
-      {modal === 'quotes' && (
+      {/* QUOTE & INVOICE MODAL — shared structure with line items */}
+      {(modal === 'quotes' || modal === 'invoices') && (
         <div className="modal-overlay" onClick={() => { setModal(null); setEditing(null); }}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">{editing ? 'Edit quote' : 'New quote'}</div>
+          <div className="modal" style={{ maxWidth: 720 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-title">{editing ? `Edit ${modal.slice(0, -1)}` : `New ${modal.slice(0, -1)}`}</div>
             <div className="form-row">
-              <div className="form-group"><label className="form-label">Quote number</label><input placeholder="Leave blank for auto" value={form.quote_number || ''} onChange={e => setForm({ ...form, quote_number: e.target.value })} /></div>
+              <div className="form-group"><label className="form-label">{modal === 'quotes' ? 'Quote' : 'Invoice'} number</label>
+                <input placeholder="Leave blank for auto"
+                  value={(modal === 'quotes' ? form.quote_number : form.invoice_number) || ''}
+                  onChange={e => setForm({ ...form, [modal === 'quotes' ? 'quote_number' : 'invoice_number']: e.target.value })} /></div>
               <div className="form-group"><label className="form-label">Status</label>
                 <select value={form.status || 'draft'} onChange={e => setForm({ ...form, status: e.target.value })}>
-                  {Object.entries(QUOTE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  {Object.entries(modal === 'quotes' ? QUOTE_STATUS : INVOICE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select></div>
             </div>
             <div className="form-row">
@@ -446,58 +674,72 @@ export default function Business() {
                 </select></div>
             </div>
             <div className="form-row">
-              <div className="form-group"><label className="form-label">Issue date</label><input type="date" value={form.issue_date || today} onChange={e => setForm({ ...form, issue_date: e.target.value })} /></div>
-              <div className="form-group"><label className="form-label">Valid until</label><input type="date" value={form.valid_until || ''} onChange={e => setForm({ ...form, valid_until: e.target.value })} /></div>
+              <div className="form-group"><label className="form-label">Issue date</label>
+                <input type="date" value={form.issue_date || today} onChange={e => setForm({ ...form, issue_date: e.target.value })} /></div>
+              <div className="form-group"><label className="form-label">{modal === 'quotes' ? 'Valid until' : 'Due date'}</label>
+                <input type="date"
+                  value={(modal === 'quotes' ? form.valid_until : form.due_date) || ''}
+                  onChange={e => setForm({ ...form, [modal === 'quotes' ? 'valid_until' : 'due_date']: e.target.value })} /></div>
             </div>
-            <div className="form-row">
-              <div className="form-group"><label className="form-label">Amount net (£) *</label><input type="number" step="0.01" value={form.amount || ''} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
-              <div className="form-group"><label className="form-label">VAT (£)</label><input type="number" step="0.01" value={form.vat_amount || 0} onChange={e => setForm({ ...form, vat_amount: e.target.value })} /></div>
-            </div>
-            <div className="form-group"><label className="form-label">Notes</label><textarea rows={2} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button className="btn btn-ghost" onClick={() => { setModal(null); setEditing(null); }}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => saveItem('quotes')}>{editing ? 'Save' : 'Create'}</button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* INVOICE MODAL */}
-      {modal === 'invoices' && (
-        <div className="modal-overlay" onClick={() => { setModal(null); setEditing(null); }}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">{editing ? 'Edit invoice' : 'New invoice'}</div>
-            <div className="form-row">
-              <div className="form-group"><label className="form-label">Invoice number</label><input placeholder="Leave blank for auto" value={form.invoice_number || ''} onChange={e => setForm({ ...form, invoice_number: e.target.value })} /></div>
-              <div className="form-group"><label className="form-label">Status</label>
-                <select value={form.status || 'draft'} onChange={e => setForm({ ...form, status: e.target.value })}>
-                  {Object.entries(INVOICE_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select></div>
+            {/* Line items editor */}
+            <div style={{ marginTop: 12 }}>
+              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Line items</span>
+                <button className="btn btn-ghost btn-sm" onClick={addLineItem}>+ Add line</button>
+              </label>
+              {(form.line_items || []).length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px 90px 30px', gap: 6, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                    <span>Description</span>
+                    <span style={{ textAlign: 'right' }}>Qty</span>
+                    <span style={{ textAlign: 'right' }}>Rate £</span>
+                    <span style={{ textAlign: 'right' }}>Amount £</span>
+                    <span></span>
+                  </div>
+                  {(form.line_items || []).map((li, idx) => (
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px 90px 30px', gap: 6 }}>
+                      <input value={li.description || ''} onChange={e => updateLineItem(idx, 'description', e.target.value)} placeholder="e.g. Network audit" />
+                      <input type="number" step="0.01" value={li.quantity || ''} onChange={e => updateLineItem(idx, 'quantity', e.target.value)} style={{ textAlign: 'right' }} />
+                      <input type="number" step="0.01" value={li.rate || ''} onChange={e => updateLineItem(idx, 'rate', e.target.value)} style={{ textAlign: 'right' }} />
+                      <input type="number" step="0.01" value={li.amount || ''} readOnly style={{ textAlign: 'right', background: 'var(--bg-tertiary)' }} />
+                      <button className="btn-icon btn-sm" onClick={() => removeLineItem(idx)}>×</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 10, textAlign: 'center', background: 'var(--bg-tertiary)', borderRadius: 6, marginBottom: 12 }}>
+                  No line items — using lump-sum amount below. Click "Add line" to itemise.
+                </div>
+              )}
             </div>
+
             <div className="form-row">
-              <div className="form-group"><label className="form-label">Client</label>
-                <select value={form.client_id || ''} onChange={e => setForm({ ...form, client_id: e.target.value || null })}>
-                  <option value="">— None —</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}
-                </select></div>
-              <div className="form-group"><label className="form-label">Project</label>
-                <select value={form.project_id || ''} onChange={e => setForm({ ...form, project_id: e.target.value || null })}>
-                  <option value="">— None —</option>
-                  {projects.filter(p => !form.client_id || p.client_id === form.client_id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select></div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Amount net (£) *</span>
+                  {(form.line_items || []).length > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>auto from line items</span>}
+                </label>
+                <input type="number" step="0.01" value={form.amount || ''}
+                  onChange={e => setForm({ ...form, amount: e.target.value })}
+                  readOnly={(form.line_items || []).length > 0}
+                  style={(form.line_items || []).length > 0 ? { background: 'var(--bg-tertiary)' } : {}} />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>VAT (£)</span>
+                  <button onClick={() => applyVAT(0.20)} style={{ fontSize: 10, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Apply 20%</button>
+                </label>
+                <input type="number" step="0.01" value={form.vat_amount || 0} onChange={e => setForm({ ...form, vat_amount: e.target.value })} />
+              </div>
             </div>
-            <div className="form-row">
-              <div className="form-group"><label className="form-label">Issue date</label><input type="date" value={form.issue_date || today} onChange={e => setForm({ ...form, issue_date: e.target.value })} /></div>
-              <div className="form-group"><label className="form-label">Due date</label><input type="date" value={form.due_date || ''} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
-            </div>
-            <div className="form-row">
-              <div className="form-group"><label className="form-label">Amount net (£) *</label><input type="number" step="0.01" value={form.amount || ''} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
-              <div className="form-group"><label className="form-label">VAT (£)</label><input type="number" step="0.01" value={form.vat_amount || 0} onChange={e => setForm({ ...form, vat_amount: e.target.value })} /></div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 0', fontSize: 14 }}>
+              <strong>Total: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{fmt.currency(modalTotal)}</span></strong>
             </div>
             <div className="form-group"><label className="form-label">Notes</label><textarea rows={2} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button className="btn btn-ghost" onClick={() => { setModal(null); setEditing(null); }}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => saveItem('invoices')}>{editing ? 'Save' : 'Create'}</button>
+              <button className="btn btn-primary" onClick={() => saveItem(modal)}>{editing ? 'Save' : 'Create'}</button>
             </div>
           </div>
         </div>
@@ -519,7 +761,13 @@ export default function Business() {
             <div className="form-group"><label className="form-label">Description *</label><input value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
             <div className="form-row">
               <div className="form-group"><label className="form-label">Amount (£) *</label><input type="number" step="0.01" value={form.amount || ''} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
-              <div className="form-group"><label className="form-label">VAT (£)</label><input type="number" step="0.01" value={form.vat_amount || 0} onChange={e => setForm({ ...form, vat_amount: e.target.value })} /></div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>VAT (£)</span>
+                  <button onClick={() => applyVAT(0.20)} style={{ fontSize: 10, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Apply 20%</button>
+                </label>
+                <input type="number" step="0.01" value={form.vat_amount || 0} onChange={e => setForm({ ...form, vat_amount: e.target.value })} />
+              </div>
             </div>
             <div className="form-row">
               <div className="form-group"><label className="form-label">Client (optional)</label>
@@ -540,6 +788,57 @@ export default function Business() {
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button className="btn btn-ghost" onClick={() => { setModal(null); setEditing(null); }}>Cancel</button>
               <button className="btn btn-primary" onClick={() => saveItem('expenses')}>{editing ? 'Save' : 'Add'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INTERACTIONS MODAL */}
+      {modal === 'interactions' && interactionsClient && (
+        <div className="modal-overlay" onClick={() => { setModal(null); setInteractionsClient(null); setInteractions([]); setForm({}); }}>
+          <div className="modal" style={{ maxWidth: 640 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-title">{interactionsClient.company || interactionsClient.name} — interactions</div>
+
+            {/* Quick add */}
+            <div style={{ display: 'grid', gridTemplateColumns: '120px 140px 1fr', gap: 8, marginBottom: 8 }}>
+              <select value={form.type || 'call'} onChange={e => setForm({ ...form, type: e.target.value })}>
+                {Object.entries(INTERACTION_TYPES).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+              </select>
+              <input type="datetime-local"
+                value={form.date ? new Date(form.date).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16)}
+                onChange={e => setForm({ ...form, date: e.target.value })} />
+              <input placeholder="Quick summary..." value={form.summary || ''} onChange={e => setForm({ ...form, summary: e.target.value })} />
+            </div>
+            <textarea rows={2} placeholder="Notes (optional)" value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ width: '100%', marginBottom: 8 }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+              <button className="btn btn-primary btn-sm" onClick={addInteraction} disabled={!form.type || !form.summary}>+ Log interaction</button>
+            </div>
+
+            {/* History */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, maxHeight: 360, overflowY: 'auto' }}>
+              {interactions.length === 0 && <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)', fontSize: 12 }}>No interactions logged yet</div>}
+              {interactions.map(i => {
+                const meta = INTERACTION_TYPES[i.type] || INTERACTION_TYPES.other;
+                return (
+                  <div key={i.id} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 18, lineHeight: 1 }}>{meta.icon}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                        <strong style={{ fontSize: 13 }}>{i.summary}</strong>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                          {new Date(i.date).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {i.notes && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, whiteSpace: 'pre-wrap' }}>{i.notes}</div>}
+                    </div>
+                    <button className="btn-icon btn-sm" onClick={() => deleteInteraction(i.id)}>×</button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button className="btn btn-ghost" onClick={() => { setModal(null); setInteractionsClient(null); setInteractions([]); setForm({}); }}>Close</button>
             </div>
           </div>
         </div>
