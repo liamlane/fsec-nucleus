@@ -347,7 +347,6 @@ $$;
 
 -- ════════════════════════════════════════════════════════════════════
 -- STAGE 3 (RETROFITTED): WELLNESS & SUBSTANCE TRACKING
--- All statements use IF NOT EXISTS — safe to re-run.
 -- ════════════════════════════════════════════════════════════════════
 
 ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS is_checkin BOOLEAN DEFAULT FALSE;
@@ -375,3 +374,188 @@ CREATE TABLE IF NOT EXISTS substance_logs (
 
 CREATE INDEX IF NOT EXISTS idx_substance_logs_substance ON substance_logs(substance_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_substances_active        ON substances(active) WHERE active = true;
+
+-- ════════════════════════════════════════════════════════════════════
+-- STAGE 5: BUSINESS MANAGEMENT (Fast Lane Technology)
+-- Clients, projects, quotes, invoices, expenses
+-- ════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS business_clients (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name         TEXT NOT NULL,
+    company      TEXT,
+    email        TEXT,
+    phone        TEXT,
+    address      TEXT,
+    website      TEXT,
+    status       TEXT DEFAULT 'lead' CHECK (status IN ('lead','prospect','active','dormant','lost')),
+    hourly_rate  NUMERIC(10,2),
+    notes        TEXT,
+    tags         TEXT[],
+    colour       TEXT DEFAULT '#6366f1',
+    is_deleted   BOOLEAN DEFAULT FALSE,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS business_projects (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id     UUID REFERENCES business_clients(id) ON DELETE SET NULL,
+    name          TEXT NOT NULL,
+    description   TEXT,
+    status        TEXT DEFAULT 'active' CHECK (status IN ('quoted','active','on_hold','completed','cancelled')),
+    billing_type  TEXT DEFAULT 'fixed' CHECK (billing_type IN ('fixed','hourly','retainer')),
+    value         NUMERIC(12,2),
+    start_date    DATE,
+    end_date      DATE,
+    notes         TEXT,
+    is_deleted    BOOLEAN DEFAULT FALSE,
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS business_invoices (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id       UUID REFERENCES business_clients(id) ON DELETE SET NULL,
+    project_id      UUID REFERENCES business_projects(id) ON DELETE SET NULL,
+    invoice_number  TEXT NOT NULL,
+    issue_date      DATE NOT NULL DEFAULT CURRENT_DATE,
+    due_date        DATE,
+    paid_date       DATE,
+    amount          NUMERIC(12,2) NOT NULL,
+    vat_amount      NUMERIC(12,2) DEFAULT 0,
+    status          TEXT DEFAULT 'draft' CHECK (status IN ('draft','sent','paid','overdue','cancelled')),
+    notes           TEXT,
+    line_items      JSONB,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS business_quotes (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id               UUID REFERENCES business_clients(id) ON DELETE SET NULL,
+    project_id              UUID REFERENCES business_projects(id) ON DELETE SET NULL,
+    quote_number            TEXT NOT NULL,
+    issue_date              DATE NOT NULL DEFAULT CURRENT_DATE,
+    valid_until             DATE,
+    amount                  NUMERIC(12,2) NOT NULL,
+    vat_amount              NUMERIC(12,2) DEFAULT 0,
+    status                  TEXT DEFAULT 'draft' CHECK (status IN ('draft','sent','accepted','declined','expired')),
+    notes                   TEXT,
+    line_items              JSONB,
+    converted_to_invoice_id UUID REFERENCES business_invoices(id) ON DELETE SET NULL,
+    created_at              TIMESTAMPTZ DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS business_expenses (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    date         DATE NOT NULL DEFAULT CURRENT_DATE,
+    description  TEXT NOT NULL,
+    category     TEXT,
+    amount       NUMERIC(12,2) NOT NULL,
+    vat_amount   NUMERIC(12,2) DEFAULT 0,
+    claimable    BOOLEAN DEFAULT TRUE,
+    client_id    UUID REFERENCES business_clients(id) ON DELETE SET NULL,
+    project_id   UUID REFERENCES business_projects(id) ON DELETE SET NULL,
+    receipt_url  TEXT,
+    notes        TEXT,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_business_clients_status   ON business_clients(status) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_business_projects_client  ON business_projects(client_id);
+CREATE INDEX IF NOT EXISTS idx_business_projects_status  ON business_projects(status) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_business_invoices_status  ON business_invoices(status);
+CREATE INDEX IF NOT EXISTS idx_business_invoices_client  ON business_invoices(client_id);
+CREATE INDEX IF NOT EXISTS idx_business_invoices_due     ON business_invoices(due_date) WHERE status IN ('sent','overdue');
+CREATE INDEX IF NOT EXISTS idx_business_quotes_status    ON business_quotes(status);
+CREATE INDEX IF NOT EXISTS idx_business_quotes_client    ON business_quotes(client_id);
+CREATE INDEX IF NOT EXISTS idx_business_expenses_date    ON business_expenses(date DESC);
+
+INSERT INTO app_settings (key, value) VALUES ('business_name', '"Fast Lane Technology"'::jsonb) ON CONFLICT DO NOTHING;
+
+-- ════════════════════════════════════════════════════════════════════
+-- STAGE 6: MARKETING & SOCIAL CONTENT
+-- ════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS marketing_campaigns (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT NOT NULL,
+    description TEXT,
+    goal        TEXT,
+    start_date  DATE,
+    end_date    DATE,
+    status      TEXT DEFAULT 'planning' CHECK (status IN ('planning','active','completed','paused')),
+    colour      TEXT DEFAULT '#6366f1',
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS social_posts (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id         UUID REFERENCES marketing_campaigns(id) ON DELETE SET NULL,
+    platform            TEXT NOT NULL CHECK (platform IN ('linkedin','twitter','facebook','instagram','blog','youtube','tiktok','other')),
+    content             TEXT NOT NULL,
+    hashtags            TEXT[],
+    status              TEXT DEFAULT 'idea' CHECK (status IN ('idea','drafted','scheduled','posted','archived')),
+    scheduled_for       TIMESTAMPTZ,
+    posted_at           TIMESTAMPTZ,
+    post_url            TEXT,
+    engagement_likes    INT DEFAULT 0,
+    engagement_comments INT DEFAULT 0,
+    engagement_shares   INT DEFAULT 0,
+    notes               TEXT,
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS post_templates (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name       TEXT NOT NULL,
+    category   TEXT,
+    template   TEXT NOT NULL,
+    platforms  TEXT[],
+    notes      TEXT,
+    is_seeded  BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS content_ideas (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title      TEXT NOT NULL,
+    notes      TEXT,
+    tags       TEXT[],
+    priority   TEXT DEFAULT 'medium' CHECK (priority IN ('low','medium','high')),
+    used       BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_social_posts_status      ON social_posts(status);
+CREATE INDEX IF NOT EXISTS idx_social_posts_scheduled   ON social_posts(scheduled_for) WHERE status = 'scheduled';
+CREATE INDEX IF NOT EXISTS idx_social_posts_campaign    ON social_posts(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_content_ideas_used       ON content_ideas(used) WHERE used = false;
+
+-- Seed starter templates for a tech consultancy
+INSERT INTO post_templates (name, category, template, platforms, is_seeded) VALUES
+    ('Quick Tech Tip', 'tip',
+     E'💡 Pro tip for {audience}:\n\n{tip}\n\nWhy it matters: {why_it_matters}\n\n#{tag1} #{tag2}',
+     ARRAY['linkedin','twitter'], true),
+    ('Project Win', 'case_study',
+     E'Just wrapped up a {project_type} for a {client_type}.\n\nThe challenge: {challenge}\n\nThe outcome: {outcome}\n\nLesson learnt: {lesson}',
+     ARRAY['linkedin'], true),
+    ('Behind The Scenes', 'behind_the_scenes',
+     E'Here''s what {timeframe} looks like at {company}:\n\n{description}\n\n{takeaway}',
+     ARRAY['linkedin','instagram'], true),
+    ('Industry Insight', 'industry_insight',
+     E'I''ve been seeing {observation} across {industry} recently.\n\nMy take: {insight}\n\nWhat are you seeing?',
+     ARRAY['linkedin','twitter'], true),
+    ('Milestone', 'milestone',
+     E'{emoji} {milestone}\n\n{reflection}\n\nWhat''s next: {next_step}',
+     ARRAY['linkedin','twitter','instagram'], true),
+    ('Hot Take Question', 'question',
+     E'{provocative_statement}\n\nDo you agree?\n\n→ {position_a}\n→ {position_b}\n\nLet me know in the comments.',
+     ARRAY['linkedin','twitter'], true),
+    ('How-To Thread Opener', 'tutorial',
+     E'How to {achieve_outcome} in {timeframe}:\n\nA thread 🧵\n\n1/ {first_point}',
+     ARRAY['twitter','linkedin'], true)
+ON CONFLICT DO NOTHING;

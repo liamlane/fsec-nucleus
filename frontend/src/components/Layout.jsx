@@ -1,37 +1,46 @@
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext.jsx';
 import { useState } from 'react';
-import { get } from '../utils/api';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext.jsx';
+import { get } from '../utils/api.js';
 
 const NAV = [
-  { to: '/',         label: 'Dashboard', icon: '⬡', exact: true },
-  { to: '/finance',  label: 'Finance',   icon: '₤' },
-  { to: '/goals',    label: 'Goals',     icon: '◎' },
-  { to: '/habits',   label: 'Habits',    icon: '⊕' },
-  { to: '/notes',    label: 'Notes',     icon: '≡' },
-  { to: '/calendar', label: 'Calendar',  icon: '⊞' },
-  { to: '/journal',  label: 'Journal',   icon: '◈' },
-  { to: '/time',     label: 'Time',      icon: '◷' },
-  { to: '/settings', label: 'Settings',  icon: '⚙' },
+  { to: '/',          label: 'Dashboard', icon: '⬡', exact: true },
+  { to: '/finance',   label: 'Finance',   icon: '₤' },
+  { to: '/business',  label: 'Business',  icon: '✦' },
+  { to: '/marketing', label: 'Marketing', icon: '◊' },
+  { to: '/goals',     label: 'Goals',     icon: '◎' },
+  { to: '/habits',    label: 'Habits',    icon: '⊕' },
+  { to: '/trackers',  label: 'Trackers',  icon: '◉' },
+  { to: '/notes',     label: 'Notes',     icon: '≡' },
+  { to: '/calendar',  label: 'Calendar',  icon: '⊞' },
+  { to: '/journal',   label: 'Journal',   icon: '◈' },
+  { to: '/time',      label: 'Time',      icon: '◷' },
+  { to: '/settings',  label: 'Settings',  icon: '⚙' },
 ];
 
 function BottomNav() {
   const location = useLocation();
+  // Show a subset on the mobile bottom bar — the full list is in the drawer
+  const MOBILE_NAV = [
+    NAV[0],  // Dashboard
+    NAV[1],  // Finance
+    NAV[2],  // Business
+    NAV[3],  // Marketing
+    NAV[10], // Time
+  ];
   return (
     <nav className="bottom-nav">
-      {NAV.map(item => (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          end={item.exact}
-          className={({ isActive }) =>
-            `bottom-nav-item${isActive ? ' active' : ''}`
-          }
-        >
-          <span className="bottom-nav-icon">{item.icon}</span>
-          <span>{item.label}</span>
-        </NavLink>
-      ))}
+      {MOBILE_NAV.map(item => {
+        const active = item.exact
+          ? location.pathname === item.to
+          : location.pathname.startsWith(item.to);
+        return (
+          <NavLink key={item.to} to={item.to} className={active ? 'active' : ''}>
+            <span className="nav-icon">{item.icon}</span>
+            <span className="nav-label">{item.label}</span>
+          </NavLink>
+        );
+      })}
     </nav>
   );
 }
@@ -39,9 +48,10 @@ function BottomNav() {
 export default function Layout() {
   const { logout } = useAuth();
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery]     = useState('');
   const [searchResults, setSearchResults] = useState([]);
-  const [showSearch, setShowSearch] = useState(false);
+  const [showSearch, setShowSearch]       = useState(false);
+  const [drawerOpen, setDrawerOpen]       = useState(false);
 
   const today = new Date().toLocaleDateString('en-GB', {
     weekday: 'long', day: 'numeric', month: 'short',
@@ -51,9 +61,14 @@ export default function Layout() {
     const q = e.target.value;
     setSearchQuery(q);
     if (q.length >= 2) {
-      const res = await get(`/search?q=${encodeURIComponent(q)}`);
-      setSearchResults(res.results);
-      setShowSearch(true);
+      try {
+        const res = await get(`/search?q=${encodeURIComponent(q)}`);
+        setSearchResults(res.results || []);
+        setShowSearch(true);
+      } catch {
+        setSearchResults([]);
+        setShowSearch(false);
+      }
     } else {
       setSearchResults([]);
       setShowSearch(false);
@@ -62,21 +77,47 @@ export default function Layout() {
 
   const goToResult = (type, id) => {
     let path = '';
-    if (type === 'note') path = `/notes/${id}`;
-    else if (type === 'goal') path = `/goals`;
-    else if (type === 'transaction') path = `/finance`;
-    else if (type === 'event') path = `/calendar`;
-    else if (type === 'journal') path = `/journal`;
+    // Personal
+    if      (type === 'note')        path = `/notes/${id}`;
+    else if (type === 'goal')        path = '/goals';
+    else if (type === 'transaction') path = '/finance';
+    else if (type === 'event')       path = '/calendar';
+    else if (type === 'journal')     path = '/journal';
+    else if (type === 'habit')       path = '/habits';
+    else if (type === 'payee')       path = '/finance';
+    else if (type === 'substance')   path = '/habits';
+    // Business
+    else if (type === 'client')      path = '/business';
+    else if (type === 'project')     path = '/business';
+    else if (type === 'invoice')     path = '/business';
+    else if (type === 'quote')       path = '/business';
+    else if (type === 'expense')     path = '/business';
+    // Marketing
+    else if (type === 'social_post') path = '/marketing';
+    else if (type === 'idea')        path = '/marketing';
+    else if (type === 'campaign')    path = '/marketing';
+    // Trackers
+    else if (type === 'media')       path = '/trackers';
+    else if (type === 'contact')     path = '/trackers';
     else return;
     navigate(path);
     setShowSearch(false);
     setSearchQuery('');
+    setDrawerOpen(false);
+  };
+
+  const TYPE_LABELS = {
+    note: 'Note', goal: 'Goal', transaction: 'Transaction', event: 'Event',
+    journal: 'Journal', habit: 'Habit', payee: 'Payee', substance: 'Substance',
+    client: 'Client', project: 'Project', invoice: 'Invoice', quote: 'Quote',
+    expense: 'Expense', social_post: 'Post', idea: 'Idea', campaign: 'Campaign',
+    media: 'Media', contact: 'Contact',
   };
 
   return (
     <div className="app-shell">
       {/* Sidebar */}
-      <aside className="app-sidebar">
+      <aside className={`app-sidebar ${drawerOpen ? 'open' : ''}`}>
         <div style={{ padding: '20px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
@@ -92,98 +133,92 @@ export default function Layout() {
           </div>
         </div>
 
-        <nav style={{ flex: 1, padding: '12px 8px', overflowY: 'auto' }}>
+        <nav className="sidebar-nav">
           {NAV.map(item => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.exact}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '9px 12px',
-                borderRadius: 8,
-                marginBottom: 2,
-                fontSize: 14,
-                fontWeight: isActive ? 600 : 400,
-                color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                background: isActive ? 'var(--bg-hover)' : 'transparent',
-                transition: 'var(--transition)',
-                textDecoration: 'none',
-                position: 'relative',
-              })}
+              onClick={() => setDrawerOpen(false)}
+              className={({ isActive }) => isActive ? 'active' : ''}
             >
-              {({ isActive }) => (
-                <>
-                  {isActive && (
-                    <div style={{
-                      position: 'absolute', left: 0, top: '50%',
-                      transform: 'translateY(-50%)',
-                      width: 3, height: '60%',
-                      background: 'var(--accent)',
-                      borderRadius: '0 2px 2px 0',
-                      boxShadow: '0 0 8px var(--accent)',
-                    }} />
-                  )}
-                  <span style={{ fontSize: 16, width: 20, textAlign: 'center' }}>{item.icon}</span>
-                  <span>{item.label}</span>
-                </>
-              )}
+              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-label">{item.label}</span>
             </NavLink>
           ))}
         </nav>
 
-        <div style={{ padding: '12px 8px', borderTop: '1px solid var(--border)' }}>
-          <button
-            onClick={() => { logout(); navigate('/login'); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '9px 12px', borderRadius: 8, fontSize: 14,
-              color: 'var(--text-muted)', background: 'transparent', width: '100%',
-              transition: 'var(--transition)',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; }}
-          >
-            <span style={{ fontSize: 16 }}>⏏</span>
-            <span>Lock</span>
-          </button>
+        <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
+          <button className="btn btn-ghost btn-sm" style={{ width: '100%' }} onClick={logout}>Log out</button>
         </div>
       </aside>
 
-      {/* Main content */}
+      {drawerOpen && <div className="drawer-overlay" onClick={() => setDrawerOpen(false)} />}
+
+      {/* Main */}
       <main className="app-main">
-        <div style={{ padding: '12px 20px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 10 }}>
-          <div style={{ position: 'relative', maxWidth: 400 }}>
+        <header className="app-header">
+          <button className="drawer-toggle" onClick={() => setDrawerOpen(d => !d)} aria-label="Menu">☰</button>
+
+          <div className="search-wrap" style={{ position: 'relative', flex: 1, maxWidth: 480 }}>
             <input
-              type="text"
-              placeholder="Search notes, goals, transactions..."
+              type="search"
+              placeholder="Search everything..."
               value={searchQuery}
               onChange={handleSearch}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+              onBlur={() => setTimeout(() => setShowSearch(false), 200)}
+              onFocus={() => searchQuery.length >= 2 && setShowSearch(true)}
+              style={{ width: '100%' }}
             />
             {showSearch && searchResults.length > 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, zIndex: 1000, maxHeight: 300, overflowY: 'auto' }}>
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+                background: 'var(--bg-card)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-lg)',
+                maxHeight: 480, overflowY: 'auto', zIndex: 100,
+              }}>
                 {searchResults.map(r => (
-                  <div
+                  <button
                     key={`${r.type}-${r.id}`}
                     onClick={() => goToResult(r.type, r.id)}
-                    style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '10px 14px',
+                      background: 'transparent', border: 'none',
+                      borderBottom: '1px solid var(--border)',
+                      display: 'flex', justifyContent: 'space-between', gap: 12,
+                      alignItems: 'center', cursor: 'pointer',
+                    }}
                   >
-                    <span style={{ fontSize: 12, color: 'var(--accent)' }}>[{r.type}]</span> {r.text}
-                  </div>
+                    <span style={{
+                      fontSize: 13, color: 'var(--text-primary)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{r.text || '(untitled)'}</span>
+                    <span style={{
+                      fontSize: 10, color: 'var(--text-muted)',
+                      background: 'var(--bg-tertiary)', padding: '2px 8px',
+                      borderRadius: 99, flexShrink: 0,
+                    }}>{TYPE_LABELS[r.type] || r.type}</span>
+                  </button>
                 ))}
               </div>
             )}
+            {showSearch && searchQuery.length >= 2 && searchResults.length === 0 && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+                background: 'var(--bg-card)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)', padding: 14,
+                fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', zIndex: 100,
+              }}>No results for "{searchQuery}"</div>
+            )}
           </div>
-        </div>
-        <Outlet />
-      </main>
+        </header>
 
-      <BottomNav />
+        <div className="app-content">
+          <Outlet />
+        </div>
+
+        <BottomNav />
+      </main>
     </div>
   );
 }
