@@ -9,6 +9,11 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis:       30000,
   connectionTimeoutMillis: 2000,
+  // Hard ceiling per query. Anything above this gets aborted by postgres
+  // with `canceling statement due to statement timeout`. Protects against
+  // runaway analytics queries holding a backend handler indefinitely.
+  // The nginx proxy_read_timeout is 120s — this stays well below that.
+  statement_timeout: 15000,
 });
 
 pool.on('error', (err) => {
