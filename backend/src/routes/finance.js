@@ -171,7 +171,11 @@ router.delete('/accounts/:id', asyncHandler(async (req, res) => {
 
 // ── Categories ────────────────────────────────────────────────────────────
 router.get('/categories', asyncHandler(async (req, res) => {
-  const { rows } = await db.query('SELECT * FROM categories ORDER BY type, name');
+  const { rows } = await db.query(
+    `SELECT * FROM categories
+     WHERE COALESCE(is_deleted, false) = false
+     ORDER BY type, name`
+  );
   res.json(rows);
 }));
 
@@ -199,7 +203,9 @@ router.patch('/categories/:id', asyncHandler(async (req, res) => {
 }));
 
 router.delete('/categories/:id', asyncHandler(async (req, res) => {
-  await db.query('DELETE FROM categories WHERE id=$1', [req.params.id]);
+  // Soft delete — preserves FK references in existing transactions.
+  // Matches the behaviour of DELETE /settings/categories/:id.
+  await db.query('UPDATE categories SET is_deleted=true WHERE id=$1', [req.params.id]);
   res.status(204).end();
 }));
 
