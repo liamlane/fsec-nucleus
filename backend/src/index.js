@@ -3,6 +3,8 @@ const cors       = require('cors');
 const helmet     = require('helmet');
 const rateLimit  = require('express-rate-limit');
 const cron       = require('node-cron');
+const path       = require('path');
+const migrate    = require('node-pg-migrate').default;
 
 const { router: authRouter, requireAuth } = require('./middleware/auth');
 const financeRouter   = require('./routes/finance');
@@ -93,8 +95,42 @@ cron.schedule('15 0 * * *', async () => {
     } catch (e) { console.error('[cron] quote expiry failed:', e.message); }
 });
 
+// ── Migration runner ──────────────────────────────────────────────────────
+// Runs at startup before the HTTP server binds. Idempotent — if nothing is
+// pending, this is a sub-second no-op.
+async function runMigrations() {
+    console.log('[migrate] Checking for pending migrations...');
+    try {
+        const applied = await migrate({
+            databaseUrl: {
+                host:     process.env.POSTGRES_HOST || 'postgres',
+                port:     parseInt(process.env.POSTGRES_PORT || '5432', 10),
+                database: process.env.POSTGRES_DB,
+                user:     process.env.POSTGRES_USER,
+                password: process.env.POSTGRES_PASSWORD,
+            },
+            dir:             path.join(__dirname, '..', 'migrations'),
+            direction:       'up',
+            migrationsTable: 'pgmigrations',
+            log:             (msg) => console.log(`[migrate] ${msg}`),
+            // Skip JS files — we standardise on SQL migrations
+            singleTransaction: true,
+        });
+        console.log(`[migrate] Done. Applied ${Array.isArray(applied) ? applied.length : 0} migration(s).`);
+    } catch (e) {
+        console.error('[migrate] FATAL: migration failed:', e.message);
+        console.error('[migrate] Backend will not start. Inspect the DB and pgmigrations table before retrying.');
+        process.exit(1);
+    }
+}
+
+// ── Startup ───────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-    console.log(`Nucleus API running on :${PORT}`);
-    logger.info('startup', `Nucleus API started on port ${PORT}`).catch(() => {});
-});
+
+(async () => {
+    await runMigrations();
+    app.listen(PORT, () => {
+        console.log(`Nucleus API running on :${PORT}`);
+        logger.info('startup', `Nucleus API started on port ${PORT}`).catch(() => {});
+    });
+})();

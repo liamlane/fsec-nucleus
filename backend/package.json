@@ -4,7 +4,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "migrate": "node-pg-migrate",
+    "migrate:create": "node-pg-migrate create --sql"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -14,6 +16,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
+    "node-pg-migrate": "^7.6.1",
     "pdfkit": "^0.15.0",
     "pg": "^8.11.3",
     "uuid": "^9.0.0"
