@@ -485,6 +485,23 @@ CREATE INDEX IF NOT EXISTS idx_business_quotes_client    ON business_quotes(clie
 CREATE INDEX IF NOT EXISTS idx_business_expenses_date    ON business_expenses(date DESC);
 CREATE INDEX IF NOT EXISTS idx_interactions_client       ON business_client_interactions(client_id, date DESC);
 
+-- ════════════════════════════════════════════════════════════════════
+-- APP SETTINGS (referenced throughout for key/value config)
+-- ════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key   TEXT PRIMARY KEY,
+    value JSONB NOT NULL
+);
+
+-- Safety for live DBs that may pre-date the is_seeded column on post_templates
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'post_templates') THEN
+        ALTER TABLE post_templates ADD COLUMN IF NOT EXISTS is_seeded BOOLEAN DEFAULT FALSE;
+    END IF;
+END $$;
+
 INSERT INTO app_settings (key, value) VALUES ('business_name', '"Fast Lane Technology"'::jsonb) ON CONFLICT DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES
     ('business_profile', '{"name":"Fast Lane Technology","tagline":"","address":"","email":"","phone":"","website":"","vat_number":"","company_number":"","bank_name":"","bank_account_name":"","bank_sort_code":"","bank_account_number":"","bank_iban":"","payment_terms":"Payment due within 30 days of invoice date. Late payments may incur charges as per the Late Payment of Commercial Debts (Interest) Act 1998."}'::jsonb)

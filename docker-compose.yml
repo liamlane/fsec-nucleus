@@ -31,8 +31,6 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       PIN_HASH: ${PIN_HASH}
       PORT: 3001
-    volumes:
-      - /mnt/FSec-Data/data/nucleus/extra-routes/trackers.js:/app/src/routes/trackers.js
     depends_on:
       postgres:
         condition: service_healthy
