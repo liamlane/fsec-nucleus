@@ -15,6 +15,19 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
   };
 
+  // Cross-tab sync — if the token is removed in another tab (logout) or
+  // changed in another tab (new login), reflect it here.
+  // The 'storage' event fires only in other tabs, not the one that wrote.
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'nucleus_token') {
+        setToken(e.newValue);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   return <AuthCtx.Provider value={{ token, login, logout, isAuth: !!token }}>{children}</AuthCtx.Provider>;
 };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { get, post, patch, del, fmt } from '../../utils/api.js';
 
 const PRIORITY_COLOURS = { low: '#6b7280', medium: '#f59e0b', high: '#f97316', critical: '#ef4444' };
@@ -55,9 +55,17 @@ export default function Goals() {
     setModal(null); setForm({}); load();
   };
 
-  const handleProgress = async (id, progress) => {
-    await patch(`/goals/${id}`, { progress: parseInt(progress) });
-    setGoals(goals.map(g => g.id === id ? { ...g, progress: parseInt(progress) } : g));
+  // Debounce progress slider — previously every drag tick fired a PATCH.
+  // Local state updates immediately for a snappy feel; the API call is
+  // deferred until the user pauses for 400ms.
+  const progressDebounce = useRef({});
+  const handleProgress = (id, progress) => {
+    const val = parseInt(progress);
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, progress: val } : g));
+    clearTimeout(progressDebounce.current[id]);
+    progressDebounce.current[id] = setTimeout(() => {
+      patch(`/goals/${id}`, { progress: val }).catch(() => { /* silent — next drag will retry */ });
+    }, 400);
   };
 
   const handleStatus = async (id, status) => {
