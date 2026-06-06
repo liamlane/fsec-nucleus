@@ -12,6 +12,25 @@ export default function Notes() {
   const [form, setForm]                 = useState({});
   const [mobilePanel, setMobilePanel]   = useState('list'); // 'list' | 'editor'
   const saveTimeout = useRef(null);
+  // Track the pending save so we can flush it if the user switches notes
+  // (or anything else) before the debounce fires. Previously, switching notes
+  // mid-typing called clearTimeout and lost the in-flight changes.
+  const pendingSave = useRef(null);
+
+  const flushPendingSave = async () => {
+    if (saveTimeout.current && pendingSave.current) {
+      clearTimeout(saveTimeout.current);
+      const { id, field, val } = pendingSave.current;
+      pendingSave.current = null;
+      saveTimeout.current = null;
+      try {
+        await patch(`/notes/${id}`, { [field]: val });
+        setNotes(prev => prev.map(n => n.id === id ? { ...n, [field]: val } : n));
+      } catch (e) {
+        console.error('Failed to flush note save:', e);
+      }
+    }
+  };
 
   const load = async () => {
     const [nb, n] = await Promise.allSettled([get('/notebooks'), get('/notes')]);
@@ -32,6 +51,7 @@ export default function Notes() {
   });
 
   const handleSelect = async (note) => {
+    await flushPendingSave();
     const full = await get(`/notes/${note.id}`);
     setSelected(full);
     setEditNote(full);
@@ -40,10 +60,17 @@ export default function Notes() {
 
   const handleContentChange = (field, val) => {
     setEditNote(prev => ({ ...prev, [field]: val }));
+    // Record what's pending so flushPendingSave knows what to write
+    pendingSave.current = { id: editNote.id, field, val };
     clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(async () => {
-      await patch(`/notes/${editNote.id}`, { [field]: val });
-      setNotes(prev => prev.map(n => n.id === editNote.id ? { ...n, [field]: val } : n));
+      try {
+        await patch(`/notes/${editNote.id}`, { [field]: val });
+        setNotes(prev => prev.map(n => n.id === editNote.id ? { ...n, [field]: val } : n));
+      } finally {
+        pendingSave.current = null;
+        saveTimeout.current = null;
+      }
     }, 800);
   };
 

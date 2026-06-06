@@ -20,7 +20,7 @@ export default function Dashboard() {
       get('/time/running'),
     ]).then(([finance, habits, goals, journal, running]) => {
       // Check if today already has a check-in
-      if (journal.value) setCheckinDone(true);
+      if (journal.value && journal.value.is_checkin === true) setCheckinDone(true);
 
       setData({
         finance: finance.value,
