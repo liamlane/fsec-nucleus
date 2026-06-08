@@ -611,3 +611,38 @@ tr:hover td { background: var(--bg-hover); }
   .two-col-layout      { grid-template-columns: 1fr 260px; }
   .two-col-layout-wide { grid-template-columns: 1fr 240px; }
 }
+/* Density modes */
+body.density-compact {
+  --main-padding: 16px;
+}
+body.density-compact .card {
+  padding: 10px !important;
+}
+body.density-compact .form-group {
+  margin-bottom: 8px;
+}
+body.density-compact h1 { font-size: 22px; }
+body.density-compact h2 { font-size: 17px; }
+body.density-compact h3 { font-size: 14px; }
+
+body.density-spacious {
+  --main-padding: 48px;
+}
+body.density-spacious .card {
+  padding: 24px !important;
+}
+body.density-spacious .form-group {
+  margin-bottom: 18px;
+}
+body.density-spacious h1 { font-size: 32px; }
+body.density-spacious h2 { font-size: 24px; }
+
+/* Font scale */
+body.fs-small  { font-size: 12px; }
+body.fs-normal { font-size: 14px; }
+body.fs-large  { font-size: 16px; }
+
+/* Accent-aware focus rings — auto-update when --accent changes */
+input:focus, select:focus, textarea:focus {
+  outline-color: var(--accent);
+}

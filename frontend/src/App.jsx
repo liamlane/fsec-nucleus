@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
+import { PreferencesProvider, usePrefs } from './contexts/PreferencesContext.jsx';
 import Layout       from './components/Layout.jsx';
 import Login        from './components/Login.jsx';
 import Dashboard    from './components/dashboard/Dashboard.jsx';
@@ -20,27 +21,40 @@ const Protected = ({ children }) => {
   return isAuth ? children : <Navigate to="/login" replace />;
 };
 
+// Redirect / to the user's preferred default landing route.
+// Falls through to Dashboard if prefs haven't loaded yet or target is invalid.
+const LandingRedirect = () => {
+  const { prefs, loaded } = usePrefs();
+  if (!loaded) return <Dashboard />;
+  const target = prefs.default_landing || '/';
+  if (target === '/' || target === '') return <Dashboard />;
+  return <Navigate to={target} replace />;
+};
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<Protected><Layout /></Protected>}>
-            <Route index               element={<Dashboard />} />
-            <Route path="finance/*"    element={<Finance />} />
-            <Route path="business/*"   element={<Business />} />
-            <Route path="marketing/*"  element={<Marketing />} />
-            <Route path="goals"        element={<Goals />} />
-            <Route path="habits"       element={<Habits />} />
-            <Route path="trackers"     element={<Trackers />} />
-            <Route path="notes/*"      element={<Notes />} />
-            <Route path="calendar"     element={<Calendar />} />
-            <Route path="journal"      element={<Journal />} />
-            <Route path="time"         element={<TimeTracking />} />
-            <Route path="settings"     element={<Settings />} />
-          </Route>
-        </Routes>
+        <PreferencesProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<Protected><Layout /></Protected>}>
+              <Route index               element={<LandingRedirect />} />
+              <Route path="dashboard"    element={<Dashboard />} />
+              <Route path="finance/*"    element={<Finance />} />
+              <Route path="business/*"   element={<Business />} />
+              <Route path="marketing/*"  element={<Marketing />} />
+              <Route path="goals"        element={<Goals />} />
+              <Route path="habits"       element={<Habits />} />
+              <Route path="trackers"     element={<Trackers />} />
+              <Route path="notes/*"      element={<Notes />} />
+              <Route path="calendar"     element={<Calendar />} />
+              <Route path="journal"      element={<Journal />} />
+              <Route path="time"         element={<TimeTracking />} />
+              <Route path="settings"     element={<Settings />} />
+            </Route>
+          </Routes>
+        </PreferencesProvider>
       </BrowserRouter>
     </AuthProvider>
   );
