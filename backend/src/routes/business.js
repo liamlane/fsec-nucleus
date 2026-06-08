@@ -1,6 +1,7 @@
 const express  = require('express');
 const router   = express.Router();
 const db       = require('../db/pool');
+const mailer   = require('../utils/mailer');
 const { generateInvoicePDF, generateQuotePDF } = require('../utils/pdf-generator');
 
 const asyncHandler = fn => (req, res, next) =>
@@ -39,6 +40,122 @@ router.patch('/profile', asyncHandler(async (req, res) => {
         [JSON.stringify(merged)]
     );
     res.json(merged);
+}));
+
+// ══════════════════════════════════════════════════════════════════════════
+// SMTP CONFIGURATION & EMAIL TEMPLATES
+// ══════════════════════════════════════════════════════════════════════════
+//
+// SMTP credentials live in app_settings.smtp_config (JSONB) and are edited
+// via the Business → Profile → SMTP tab. The password is stored plaintext
+// in the DB (same threat model as the rest of the app — single-user,
+// self-hosted, not exposed publicly). It is NEVER returned to the frontend
+// in plaintext on GET; we return `has_password: bool` instead so the UI
+// can show a "configured" indicator.
+
+router.get('/profile/smtp', asyncHandler(async (req, res) => {
+    const cfg = await mailer.getSmtpConfig();
+    if (!cfg) {
+        return res.json({
+            host: '', port: 587, secure: false,
+            user: '', from_email: '', from_name: 'Fast Lane Technology',
+            reply_to: '', allow_self_signed: false,
+            has_password: false,
+        });
+    }
+    const { pass, ...safe } = cfg;
+    res.json({ ...safe, has_password: !!pass });
+}));
+
+router.patch('/profile/smtp', asyncHandler(async (req, res) => {
+    const allowed = ['host','port','secure','user','pass','from_email','from_name','reply_to','allow_self_signed'];
+    const updates = {};
+    for (const k of allowed) {
+        if (req.body[k] !== undefined) updates[k] = req.body[k];
+    }
+    // Don't clobber the saved password with an empty string from the UI
+    if (updates.pass === '' || updates.pass === undefined) delete updates.pass;
+
+    const current = await mailer.getSmtpConfig() || {};
+    const merged  = { ...current, ...updates };
+
+    await db.query(
+        `INSERT INTO app_settings (key, value) VALUES ('smtp_config', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        [JSON.stringify(merged)]
+    );
+    const { pass, ...safe } = merged;
+    res.json({ ...safe, has_password: !!pass });
+}));
+
+router.post('/profile/smtp-test', asyncHandler(async (req, res) => {
+    const { to } = req.body;
+    if (!to) return res.status(400).json({ error: 'recipient email (to) required' });
+
+    try {
+        await mailer.verifyConnection();
+    } catch (e) {
+        return res.status(400).json({
+            error: 'SMTP connection failed: ' + e.message,
+            stage: 'connection',
+        });
+    }
+
+    const now = new Date().toISOString();
+    try {
+        const result = await mailer.sendMail({
+            to,
+            subject: 'Nucleus SMTP test',
+            text:
+                `This is a test email from your Nucleus deployment.\n\n` +
+                `If you received this, your SMTP configuration is working.\n\n` +
+                `Sent at: ${now}`,
+            html:
+                `<p>This is a test email from your Nucleus deployment.</p>` +
+                `<p>If you received this, your SMTP configuration is working.</p>` +
+                `<p style="color:#888;font-size:11px;">Sent at ${now}</p>`,
+            related_type: 'smtp_test',
+        });
+        res.json({ ok: true, log_id: result.log_id, message: `Test sent to ${to}` });
+    } catch (e) {
+        res.status(500).json({ error: 'Send failed: ' + e.message, stage: 'send' });
+    }
+}));
+
+router.get('/profile/email-templates', asyncHandler(async (req, res) => {
+    const templates = await mailer.getTemplates();
+    res.json(templates);
+}));
+
+router.patch('/profile/email-templates', asyncHandler(async (req, res) => {
+    const current = await mailer.getTemplates() || {};
+    const merged  = { ...current };
+    // Deep-merge: req.body should be { template_name: { subject, body }, ... }
+    for (const [key, val] of Object.entries(req.body)) {
+        merged[key] = { ...(merged[key] || {}), ...val };
+    }
+    await db.query(
+        `INSERT INTO app_settings (key, value) VALUES ('email_templates', $1)
+         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        [JSON.stringify(merged)]
+    );
+    res.json(merged);
+}));
+
+// ══════════════════════════════════════════════════════════════════════════
+// EMAIL LOG
+// ══════════════════════════════════════════════════════════════════════════
+router.get('/email-log', asyncHandler(async (req, res) => {
+    const limit  = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const offset = parseInt(req.query.offset, 10) || 0;
+    const { rows } = await db.query(
+        `SELECT id, to_address, subject, status, error, related_type, related_id, sent_at
+         FROM email_log
+         ORDER BY sent_at DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset]
+    );
+    res.json(rows);
 }));
 
 // ══════════════════════════════════════════════════════════════════════════
