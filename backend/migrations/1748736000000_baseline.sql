@@ -9,8 +9,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict WxHU9rc09typGDh44jPLGo7hveIpdPB1oHdmufzQCFD1qYcY1zN1iYji9AahSks
-
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
 
@@ -1336,8 +1334,6 @@ ALTER TABLE ONLY public.transactions
 --
 -- PostgreSQL database dump complete
 --
-
-\unrestrict WxHU9rc09typGDh44jPLGo7hveIpdPB1oHdmufzQCFD1qYcY1zN1iYji9AahSks
 
 
 -- Down Migration
