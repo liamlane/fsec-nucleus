@@ -66,6 +66,17 @@ export default function Business() {
   // Interactions panel state
   const [interactionsClient, setInteractionsClient] = useState(null);
   const [interactions, setInteractions]             = useState([]);
+  // Email send modal state
+  const [sendModal, setSendModal] = useState(null);   // { kind:'invoice'|'quote'|'reminder', doc, to, subject, body, level }
+  const [sending,   setSending]   = useState(false);
+  const [sendError, setSendError] = useState(null);
+  // SMTP + templates + log state (rendered under Profile tab)
+  const [smtp, setSmtp]                 = useState(null);
+  const [smtpDirty, setSmtpDirty]       = useState(false);
+  const [smtpTestStatus, setSmtpTestStatus] = useState(null);
+  const [templates, setTemplates]       = useState({});
+  const [templatesDirty, setTemplatesDirty] = useState(false);
+  const [emailLog, setEmailLog]         = useState([]);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -79,6 +90,9 @@ export default function Business() {
   const loadInvoices  = async () => { const d = await get('/business/invoices'); if (d) setInvoices(d); };
   const loadExpenses  = async () => { const d = await get('/business/expenses'); if (d) setExpenses(d); };
   const loadProfile   = async () => { const d = await get('/business/profile');  if (d) setProfile(d); };
+  const loadSmtp      = async () => { const d = await get('/business/profile/smtp'); if (d) setSmtp(d); setSmtpDirty(false); };
+  const loadTemplates = async () => { const d = await get('/business/profile/email-templates'); if (d) setTemplates(d); setTemplatesDirty(false); };
+  const loadEmailLog  = async () => { const d = await get('/business/email-log?limit=50'); if (d) setEmailLog(d); };
 
   useEffect(() => { loadDashboard(); loadClients(); loadProjects(); }, []);
   useEffect(() => { loadClients(); }, [clientTypeFilter]);
@@ -87,7 +101,7 @@ export default function Business() {
     if (tab === 'Quotes')    loadQuotes();
     if (tab === 'Invoices')  loadInvoices();
     if (tab === 'Expenses')  loadExpenses();
-    if (tab === 'Profile')   loadProfile();
+    if (tab === 'Profile')   { loadProfile(); loadSmtp(); loadTemplates(); loadEmailLog(); }
   }, [tab]);
 
   // ── Line item helpers ──────────────────────────────────────────────────
@@ -192,7 +206,129 @@ export default function Business() {
     }
   };
 
-  // ── Interactions handlers ──────────────────────────────────────────────
+  // ── Email send modal ───────────────────────────────────────────────────
+  //
+  // Server-side templates contain {placeholders}. For a snappy modal we
+  // do a simple client-side fill so the user sees a preview they can
+  // edit before sending. Backend re-fills authoritatively (so if you
+  // edit the body, your edit wins; if you leave it as-is, backend
+  // re-renders fresh values).
+
+  const clientFor = (doc) => clients.find(c => c.id === doc.client_id);
+
+  const daysOverdue = (dueDate) => {
+    if (!dueDate) return 0;
+    const ms = Date.now() - new Date(dueDate).getTime();
+    return Math.max(0, Math.floor(ms / (24 * 60 * 60 * 1000)));
+  };
+
+  const fillTemplate = (str, vars) => {
+    if (!str) return '';
+    return str.replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m));
+  };
+
+  const openSendModal = async (kind, doc) => {
+    // Load latest templates and SMTP status if we don't have them
+    if (!Object.keys(templates).length) await loadTemplates();
+    if (!smtp) await loadSmtp();
+
+    const client = clientFor(doc);
+    const days   = daysOverdue(doc.due_date);
+
+    // Pick template
+    let level = 1;
+    let templateKey = 'invoice_send';
+    if (kind === 'quote')    templateKey = 'quote_send';
+    if (kind === 'reminder') {
+      if (days >= 30)      { level = 3; templateKey = 'reminder_3'; }
+      else if (days >= 14) { level = 2; templateKey = 'reminder_2'; }
+      else                 { level = 1; templateKey = 'reminder_1'; }
+    }
+
+    // Fresh in-memory templates (in case the user hasn't saved DB updates)
+    const tpl = templates[templateKey] || { subject: '', body: '' };
+    const total = parseFloat(doc.amount || 0) + parseFloat(doc.vat_amount || 0);
+    const vars = {
+      client_name:    client?.contact_name || client?.name || client?.company || 'there',
+      from_name:      profile?.name || 'Fast Lane Technology',
+      amount:         fmt.currency(total),
+      invoice_number: doc.invoice_number,
+      quote_number:   doc.quote_number,
+      due_date:       doc.due_date    ? fmt.date(doc.due_date)    : '',
+      valid_until:    doc.valid_until ? fmt.date(doc.valid_until) : '',
+      days_overdue:   days,
+    };
+
+    setSendModal({
+      kind,
+      doc,
+      level,
+      to:      client?.email || '',
+      subject: fillTemplate(tpl.subject, vars),
+      body:    fillTemplate(tpl.body,    vars),
+    });
+    setSendError(null);
+  };
+
+  const performSend = async () => {
+    if (!sendModal) return;
+    if (!sendModal.to) { setSendError('Recipient email required'); return; }
+    setSending(true);
+    setSendError(null);
+    try {
+      const { kind, doc, level } = sendModal;
+      const payload = { to: sendModal.to, subject: sendModal.subject, body: sendModal.body };
+      let url;
+      if (kind === 'invoice')      url = `/business/invoices/${doc.id}/send`;
+      else if (kind === 'quote')   url = `/business/quotes/${doc.id}/send`;
+      else if (kind === 'reminder'){ url = `/business/invoices/${doc.id}/send-reminder`; payload.level = level; }
+      const r = await post(url, payload);
+      setSendModal(null);
+      // Refresh the affected list so status/reminder badges update
+      if (kind === 'quote')  loadQuotes();
+      else                   loadInvoices();
+      loadEmailLog();
+      alert(`Sent to ${r.to || sendModal.to}.`);
+    } catch (e) {
+      setSendError(e.message || 'Send failed');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // ── SMTP & templates handlers ─────────────────────────────────────────
+  const updateSmtpField = (k, v) => { setSmtp(s => ({ ...s, [k]: v })); setSmtpDirty(true); };
+  const saveSmtp = async () => {
+    const payload = { ...smtp };
+    delete payload.has_password;
+    // If the user didn't type a new password, don't send 'pass' at all
+    // (the backend keeps the existing one when 'pass' is undefined/empty).
+    if (payload.pass === '' || payload.pass === undefined) delete payload.pass;
+    const r = await patch('/business/profile/smtp', payload);
+    if (r) { setSmtp(r); setSmtpDirty(false); }
+  };
+  const testSmtp = async () => {
+    const to = window.prompt('Send test email to:', profile?.email || '');
+    if (!to) return;
+    setSmtpTestStatus({ kind: 'pending', message: 'Sending...' });
+    try {
+      const r = await post('/business/profile/smtp-test', { to });
+      setSmtpTestStatus({ kind: 'ok', message: r.message || `Test sent to ${to}` });
+    } catch (e) {
+      setSmtpTestStatus({ kind: 'err', message: e.message || 'Send failed' });
+    }
+    loadEmailLog();
+  };
+
+  const updateTemplate = (key, field, val) => {
+    setTemplates(t => ({ ...t, [key]: { ...(t[key] || {}), [field]: val } }));
+    setTemplatesDirty(true);
+  };
+  const saveTemplates = async () => {
+    const r = await patch('/business/profile/email-templates', templates);
+    if (r) { setTemplates(r); setTemplatesDirty(false); }
+  };
+
   const openInteractions = async (client) => {
     setInteractionsClient(client);
     const data = await get(`/business/clients/${client.id}/interactions`);
@@ -426,6 +562,7 @@ export default function Business() {
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <button className="btn-icon btn-sm" title="View PDF" onClick={() => openPDF('quotes', q.id, q.quote_number)}>📄</button>
+                      <button className="btn-icon btn-sm" title="Send by email" onClick={() => openSendModal('quote', q)}>📧</button>
                       {canConvert && <button className="btn btn-ghost btn-sm" style={{ marginRight: 4 }} onClick={() => convertQuote(q.id)}>→ Invoice</button>}
                       <button className="btn-icon btn-sm" onClick={() => openEdit('quotes', q)}>✎</button>
                       <button className="btn-icon btn-sm" onClick={() => deleteItem('quotes', q.id)}>×</button>
@@ -459,6 +596,8 @@ export default function Business() {
                     <td><span className="badge" style={{ background: status.colour + '25', color: status.colour }}>{status.label}</span></td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <button className="btn-icon btn-sm" title="View PDF" onClick={() => openPDF('invoices', i.id, i.invoice_number)}>📄</button>
+                      <button className="btn-icon btn-sm" title="Send by email" onClick={() => openSendModal('invoice', i)}>📧</button>
+                      {i.status === 'overdue' && <button className="btn-icon btn-sm" title="Send payment reminder" onClick={() => openSendModal('reminder', i)}>⏰</button>}
                       {i.status !== 'paid' && i.status !== 'cancelled' && <button className="btn btn-ghost btn-sm" style={{ marginRight: 4 }} onClick={() => markInvoicePaid(i.id)}>Mark paid</button>}
                       <button className="btn-icon btn-sm" onClick={() => openEdit('invoices', i)}>✎</button>
                       <button className="btn-icon btn-sm" onClick={() => deleteItem('invoices', i.id)}>×</button>
@@ -559,6 +698,127 @@ export default function Business() {
 
           <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
             <button className="btn btn-primary" onClick={saveProfile}>Save profile</button>
+          </div>
+
+          {/* ── SMTP CONFIGURATION ───────────────────────────────────── */}
+          <h3 style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '32px 0 10px' }}>
+            SMTP — outgoing email
+          </h3>
+          <div className="card" style={{ marginBottom: 12, padding: 12, background: 'rgba(124,106,255,0.06)', border: '1px solid rgba(124,106,255,0.18)', fontSize: 12 }}>
+            Used to send invoices, quotes, and overdue-payment reminders to clients. {smtp?.has_password ? <span style={{ color: 'var(--green)' }}>✓ SMTP password is saved.</span> : <span style={{ color: 'var(--amber)' }}>⚠ No password saved yet.</span>}
+          </div>
+          {smtp && (
+            <div className="card">
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Host</label>
+                  <input value={smtp.host || ''} onChange={e => updateSmtpField('host', e.target.value)} placeholder="mail.example.com" /></div>
+                <div className="form-group" style={{ maxWidth: 100 }}><label className="form-label">Port</label>
+                  <input type="number" value={smtp.port || 587} onChange={e => updateSmtpField('port', parseInt(e.target.value, 10) || 587)} /></div>
+                <div className="form-group" style={{ maxWidth: 180 }}><label className="form-label">Encryption</label>
+                  <select value={smtp.secure ? 'ssl' : 'starttls'} onChange={e => updateSmtpField('secure', e.target.value === 'ssl')}>
+                    <option value="starttls">STARTTLS (port 587)</option>
+                    <option value="ssl">SSL/TLS (port 465)</option>
+                  </select></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Username</label>
+                  <input value={smtp.user || ''} onChange={e => updateSmtpField('user', e.target.value)} placeholder="accounts@example.com" /></div>
+                <div className="form-group"><label className="form-label">Password {smtp.has_password && <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>(leave blank to keep saved)</span>}</label>
+                  <input type="password" value={smtp.pass || ''} onChange={e => updateSmtpField('pass', e.target.value)} placeholder={smtp.has_password ? '••••••••' : ''} /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">From address</label>
+                  <input value={smtp.from_email || ''} onChange={e => updateSmtpField('from_email', e.target.value)} placeholder="accounts@example.com" /></div>
+                <div className="form-group"><label className="form-label">From name</label>
+                  <input value={smtp.from_name || ''} onChange={e => updateSmtpField('from_name', e.target.value)} /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label className="form-label">Reply-to (optional)</label>
+                  <input value={smtp.reply_to || ''} onChange={e => updateSmtpField('reply_to', e.target.value)} placeholder="leave blank to use the From address" /></div>
+                <div className="form-group" style={{ alignSelf: 'flex-end' }}>
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="checkbox" checked={!!smtp.allow_self_signed} onChange={e => updateSmtpField('allow_self_signed', e.target.checked)} />
+                    <span>Allow self-signed certificate</span>
+                  </label>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                <button className="btn btn-ghost" onClick={testSmtp} disabled={!smtp.host}>Send test email</button>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {smtpDirty && <span style={{ fontSize: 12, color: 'var(--amber)' }}>Unsaved changes</span>}
+                  <button className="btn btn-primary" onClick={saveSmtp} disabled={!smtpDirty}>Save SMTP</button>
+                </div>
+              </div>
+              {smtpTestStatus && (
+                <div style={{ marginTop: 10, padding: 10, borderRadius: 6, fontSize: 13,
+                  background: smtpTestStatus.kind === 'ok' ? 'rgba(16,217,143,0.12)' : smtpTestStatus.kind === 'err' ? 'rgba(255,77,109,0.12)' : 'rgba(255,255,255,0.05)',
+                  color: smtpTestStatus.kind === 'ok' ? 'var(--green)' : smtpTestStatus.kind === 'err' ? 'var(--red)' : 'var(--text-muted)' }}>
+                  {smtpTestStatus.message}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── EMAIL TEMPLATES ──────────────────────────────────────── */}
+          <h3 style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '32px 0 10px' }}>
+            Email templates
+          </h3>
+          <div className="card" style={{ marginBottom: 12, padding: 12, background: 'rgba(124,106,255,0.06)', border: '1px solid rgba(124,106,255,0.18)', fontSize: 12 }}>
+            Placeholders: {' '}
+            <code>{'{client_name}'}</code>, <code>{'{from_name}'}</code>, <code>{'{amount}'}</code>, <code>{'{invoice_number}'}</code>, <code>{'{quote_number}'}</code>, <code>{'{due_date}'}</code>, <code>{'{valid_until}'}</code>, <code>{'{days_overdue}'}</code>. {' '}
+            Placeholders are filled when the email is sent — you can also edit the subject and body for that specific send right before clicking Send.
+          </div>
+          {[
+            { key: 'invoice_send', label: 'Invoice — send' },
+            { key: 'quote_send',   label: 'Quote — send' },
+            { key: 'reminder_1',   label: 'Reminder 1 — 7 days overdue (friendly)' },
+            { key: 'reminder_2',   label: 'Reminder 2 — 14 days overdue (firmer)' },
+            { key: 'reminder_3',   label: 'Reminder 3 — 30 days overdue (formal)' },
+          ].map(({ key, label }) => {
+            const t = templates[key] || {};
+            return (
+              <details key={key} className="card" style={{ marginBottom: 10 }}>
+                <summary style={{ cursor: 'pointer', padding: '8px 0', fontWeight: 500 }}>{label}</summary>
+                <div className="form-group" style={{ marginTop: 10 }}>
+                  <label className="form-label">Subject</label>
+                  <input value={t.subject || ''} onChange={e => updateTemplate(key, 'subject', e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Body</label>
+                  <textarea rows={8} value={t.body || ''} onChange={e => updateTemplate(key, 'body', e.target.value)} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+                </div>
+              </details>
+            );
+          })}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+            {templatesDirty && <span style={{ fontSize: 12, color: 'var(--amber)', alignSelf: 'center' }}>Unsaved changes</span>}
+            <button className="btn btn-primary" onClick={saveTemplates} disabled={!templatesDirty}>Save templates</button>
+          </div>
+
+          {/* ── EMAIL LOG ────────────────────────────────────────────── */}
+          <h3 style={{ fontSize: 13, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '32px 0 10px' }}>
+            Recent email activity
+          </h3>
+          <div className="card" style={{ padding: 0 }}>
+            <table>
+              <thead><tr><th>Sent</th><th>To</th><th>Subject</th><th>Type</th><th>Status</th></tr></thead>
+              <tbody>
+                {emailLog.length === 0 && <tr><td colSpan="5" style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No emails sent yet</td></tr>}
+                {emailLog.map(e => (
+                  <tr key={e.id}>
+                    <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{new Date(e.sent_at).toLocaleString('en-GB')}</td>
+                    <td style={{ fontSize: 12 }}>{e.to_address}</td>
+                    <td style={{ fontSize: 12 }}>{e.subject}</td>
+                    <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{e.related_type || '—'}</td>
+                    <td>
+                      {e.status === 'sent'
+                        ? <span className="badge" style={{ background: 'rgba(16,217,143,0.2)', color: 'var(--green)' }}>sent</span>
+                        : <span className="badge" style={{ background: 'rgba(255,77,109,0.2)', color: 'var(--red)' }} title={e.error || ''}>failed</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -839,6 +1099,92 @@ export default function Business() {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
               <button className="btn btn-ghost" onClick={() => { setModal(null); setInteractionsClient(null); setInteractions([]); setForm({}); }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SEND MODAL */}
+      {sendModal && (
+        <div className="modal-overlay" onClick={() => !sending && setSendModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 640 }}>
+            <div className="modal-title">
+              {sendModal.kind === 'invoice'  && `Send invoice ${sendModal.doc.invoice_number}`}
+              {sendModal.kind === 'quote'    && `Send quote ${sendModal.doc.quote_number}`}
+              {sendModal.kind === 'reminder' && `Send reminder ${sendModal.level} — invoice ${sendModal.doc.invoice_number}`}
+            </div>
+
+            <div className="card" style={{ marginBottom: 12, padding: 10, background: 'rgba(124,106,255,0.06)', border: '1px solid rgba(124,106,255,0.18)', fontSize: 12 }}>
+              {smtp?.has_password
+                ? <>The {sendModal.kind === 'quote' ? 'quote' : 'invoice'} PDF will be attached automatically. You can edit subject and body below before sending.</>
+                : <span style={{ color: 'var(--amber)' }}>⚠ SMTP not configured. Set it up in the Profile tab first.</span>}
+            </div>
+
+            {sendModal.kind === 'reminder' && (
+              <div className="form-group">
+                <label className="form-label">Reminder level</label>
+                <div style={{ display: 'flex', gap: 4, background: 'var(--bg-secondary)', borderRadius: 8, padding: 3 }}>
+                  {[1,2,3].map(l => (
+                    <button key={l} onClick={() => {
+                      const tpl = templates[`reminder_${l}`] || { subject: '', body: '' };
+                      const client = clientFor(sendModal.doc);
+                      const days   = daysOverdue(sendModal.doc.due_date);
+                      const total  = parseFloat(sendModal.doc.amount || 0) + parseFloat(sendModal.doc.vat_amount || 0);
+                      const vars = {
+                        client_name:    client?.contact_name || client?.name || client?.company || 'there',
+                        from_name:      profile?.name || 'Fast Lane Technology',
+                        amount:         fmt.currency(total),
+                        invoice_number: sendModal.doc.invoice_number,
+                        due_date:       sendModal.doc.due_date ? fmt.date(sendModal.doc.due_date) : '',
+                        days_overdue:   days,
+                      };
+                      setSendModal({
+                        ...sendModal, level: l,
+                        subject: fillTemplate(tpl.subject, vars),
+                        body:    fillTemplate(tpl.body,    vars),
+                      });
+                    }} style={{
+                      flex: 1, padding: '8px 16px', borderRadius: 6, fontSize: 13, fontWeight: 500,
+                      background: sendModal.level === l ? 'var(--bg-card)' : 'transparent',
+                      color: sendModal.level === l ? 'var(--text-primary)' : 'var(--text-muted)',
+                      border: 'none', cursor: 'pointer',
+                    }}>Level {l}{l === 1 ? ' — friendly' : l === 2 ? ' — firmer' : ' — formal'}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label">To</label>
+              <input type="email" value={sendModal.to} onChange={e => setSendModal({ ...sendModal, to: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Subject</label>
+              <input value={sendModal.subject} onChange={e => setSendModal({ ...sendModal, subject: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Body</label>
+              <textarea rows={10} value={sendModal.body} onChange={e => setSendModal({ ...sendModal, body: e.target.value })} style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+            </div>
+
+            {sendError && (
+              <div style={{ padding: 10, borderRadius: 6, fontSize: 13, color: 'var(--red)', background: 'rgba(255,77,109,0.12)', marginBottom: 12 }}>
+                {sendError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {sendModal.kind === 'invoice'  && 'Invoice will be marked sent.'}
+                {sendModal.kind === 'quote'    && 'Quote will be marked sent.'}
+                {sendModal.kind === 'reminder' && 'Will record this reminder so it isn\'t auto-resent.'}
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost" onClick={() => setSendModal(null)} disabled={sending}>Cancel</button>
+                <button className="btn btn-primary" onClick={performSend} disabled={sending || !smtp?.has_password}>
+                  {sending ? 'Sending…' : 'Send'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

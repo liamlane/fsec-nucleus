@@ -26,32 +26,25 @@ router.patch('/profile', asyncHandler(async (req, res) => {
     if (!req.body || typeof req.body !== 'object')
         return res.status(400).json({ error: 'body must be an object' });
 
-    const current = await getProfile();
+    let current = await getProfile();
+    if (!current || typeof current !== 'object' || Array.isArray(current)) current = {};
     const merged  = { ...current, ...req.body };
 
-    // Clip oversized fields
     for (const k of Object.keys(merged)) {
         if (typeof merged[k] === 'string') merged[k] = merged[k].slice(0, 2000);
     }
 
     await db.query(
-        `INSERT INTO app_settings (key, value) VALUES ('business_profile', $1)
-         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        `INSERT INTO app_settings (key, value) VALUES ('business_profile', $1::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = $1::jsonb`,
         [JSON.stringify(merged)]
     );
     res.json(merged);
 }));
 
 // ══════════════════════════════════════════════════════════════════════════
-// SMTP CONFIGURATION & EMAIL TEMPLATES
+// SMTP CONFIGURATION & EMAIL TEMPLATES (Stage B.1)
 // ══════════════════════════════════════════════════════════════════════════
-//
-// SMTP credentials live in app_settings.smtp_config (JSONB) and are edited
-// via the Business → Profile → SMTP tab. The password is stored plaintext
-// in the DB (same threat model as the rest of the app — single-user,
-// self-hosted, not exposed publicly). It is NEVER returned to the frontend
-// in plaintext on GET; we return `has_password: bool` instead so the UI
-// can show a "configured" indicator.
 
 router.get('/profile/smtp', asyncHandler(async (req, res) => {
     const cfg = await mailer.getSmtpConfig();
@@ -68,22 +61,26 @@ router.get('/profile/smtp', asyncHandler(async (req, res) => {
 }));
 
 router.patch('/profile/smtp', asyncHandler(async (req, res) => {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))
+        return res.status(400).json({ error: 'body must be a JSON object' });
+
     const allowed = ['host','port','secure','user','pass','from_email','from_name','reply_to','allow_self_signed'];
     const updates = {};
     for (const k of allowed) {
         if (req.body[k] !== undefined) updates[k] = req.body[k];
     }
-    // Don't clobber the saved password with an empty string from the UI
     if (updates.pass === '' || updates.pass === undefined) delete updates.pass;
 
-    const current = await mailer.getSmtpConfig() || {};
-    const merged  = { ...current, ...updates };
+    let current = await mailer.getSmtpConfig();
+    if (!current || typeof current !== 'object' || Array.isArray(current)) current = {};
+    const merged = { ...current, ...updates };
 
     await db.query(
-        `INSERT INTO app_settings (key, value) VALUES ('smtp_config', $1)
-         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        `INSERT INTO app_settings (key, value) VALUES ('smtp_config', $1::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = $1::jsonb`,
         [JSON.stringify(merged)]
     );
+
     const { pass, ...safe } = merged;
     res.json({ ...safe, has_password: !!pass });
 }));
@@ -92,28 +89,15 @@ router.post('/profile/smtp-test', asyncHandler(async (req, res) => {
     const { to } = req.body;
     if (!to) return res.status(400).json({ error: 'recipient email (to) required' });
 
-    try {
-        await mailer.verifyConnection();
-    } catch (e) {
-        return res.status(400).json({
-            error: 'SMTP connection failed: ' + e.message,
-            stage: 'connection',
-        });
-    }
+    try { await mailer.verifyConnection(); }
+    catch (e) { return res.status(400).json({ error: 'SMTP connection failed: ' + e.message, stage: 'connection' }); }
 
-    const now = new Date().toISOString();
     try {
         const result = await mailer.sendMail({
             to,
             subject: 'Nucleus SMTP test',
-            text:
-                `This is a test email from your Nucleus deployment.\n\n` +
-                `If you received this, your SMTP configuration is working.\n\n` +
-                `Sent at: ${now}`,
-            html:
-                `<p>This is a test email from your Nucleus deployment.</p>` +
-                `<p>If you received this, your SMTP configuration is working.</p>` +
-                `<p style="color:#888;font-size:11px;">Sent at ${now}</p>`,
+            text: `Test email from Nucleus.\n\nSent at: ${new Date().toISOString()}`,
+            html: `<p>Test email from Nucleus.</p>`,
             related_type: 'smtp_test',
         });
         res.json({ ok: true, log_id: result.log_id, message: `Test sent to ${to}` });
@@ -123,20 +107,26 @@ router.post('/profile/smtp-test', asyncHandler(async (req, res) => {
 }));
 
 router.get('/profile/email-templates', asyncHandler(async (req, res) => {
-    const templates = await mailer.getTemplates();
-    res.json(templates);
+    res.json(await mailer.getTemplates());
 }));
 
 router.patch('/profile/email-templates', asyncHandler(async (req, res) => {
-    const current = await mailer.getTemplates() || {};
-    const merged  = { ...current };
-    // Deep-merge: req.body should be { template_name: { subject, body }, ... }
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body))
+        return res.status(400).json({ error: 'body must be a JSON object' });
+
+    let current = await mailer.getTemplates();
+    if (!current || typeof current !== 'object' || Array.isArray(current)) current = {};
+
+    const merged = { ...current };
     for (const [key, val] of Object.entries(req.body)) {
-        merged[key] = { ...(merged[key] || {}), ...val };
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+            merged[key] = { ...(merged[key] || {}), ...val };
+        }
     }
+
     await db.query(
-        `INSERT INTO app_settings (key, value) VALUES ('email_templates', $1)
-         ON CONFLICT (key) DO UPDATE SET value = $1`,
+        `INSERT INTO app_settings (key, value) VALUES ('email_templates', $1::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = $1::jsonb`,
         [JSON.stringify(merged)]
     );
     res.json(merged);
@@ -150,13 +140,214 @@ router.get('/email-log', asyncHandler(async (req, res) => {
     const offset = parseInt(req.query.offset, 10) || 0;
     const { rows } = await db.query(
         `SELECT id, to_address, subject, status, error, related_type, related_id, sent_at
-         FROM email_log
-         ORDER BY sent_at DESC
-         LIMIT $1 OFFSET $2`,
+         FROM email_log ORDER BY sent_at DESC LIMIT $1 OFFSET $2`,
         [limit, offset]
     );
     res.json(rows);
 }));
+
+// ══════════════════════════════════════════════════════════════════════════
+// EMAIL SEND HELPERS (Stage B.2)
+// ══════════════════════════════════════════════════════════════════════════
+
+function fmtCurrency(amount, symbol = '£') {
+    const n = parseFloat(amount);
+    if (isNaN(n)) return `${symbol}0.00`;
+    return `${symbol}${n.toFixed(2)}`;
+}
+function fmtDate(d) {
+    if (!d) return '';
+    const dt = new Date(d);
+    return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+function daysOverdue(dueDate) {
+    if (!dueDate) return 0;
+    const ms = Date.now() - new Date(dueDate).getTime();
+    return Math.max(0, Math.floor(ms / (24 * 60 * 60 * 1000)));
+}
+
+async function loadEmailContext(kind, id) {
+    const profile = await getProfile() || {};
+    let doc, client;
+    if (kind === 'invoice') {
+        const { rows } = await db.query(`SELECT * FROM business_invoices WHERE id=$1`, [id]);
+        doc = rows[0];
+    } else {
+        const { rows } = await db.query(`SELECT * FROM business_quotes WHERE id=$1`, [id]);
+        doc = rows[0];
+    }
+    if (!doc) return null;
+    if (doc.client_id) {
+        const { rows } = await db.query(`SELECT * FROM business_clients WHERE id=$1`, [doc.client_id]);
+        client = rows[0];
+    }
+    return { doc, client, profile };
+}
+
+function buildTemplateVars({ doc, client, profile, kind, overrideDaysOverdue }) {
+    const totalAmount = parseFloat(doc.amount || 0) + parseFloat(doc.vat_amount || 0);
+    const vars = {
+        client_name:  client?.contact_name || client?.name || client?.company || 'there',
+        from_name:    profile.name || profile.business_name || 'Fast Lane Technology',
+        amount:       fmtCurrency(totalAmount, profile.currency_symbol || '£'),
+        due_date:     fmtDate(doc.due_date),
+        valid_until:  fmtDate(doc.valid_until),
+        days_overdue: overrideDaysOverdue ?? daysOverdue(doc.due_date),
+    };
+    if (kind === 'invoice') vars.invoice_number = doc.invoice_number;
+    else                     vars.quote_number   = doc.quote_number;
+    return vars;
+}
+
+/**
+ * Generate a PDF buffer + filled email subject/body, then send via mailer.
+ * Logs a client interaction on success.
+ *
+ * @param {Object} opts
+ * @param {'invoice'|'quote'} opts.kind
+ * @param {string}            opts.docId
+ * @param {string}            opts.templateKey   e.g. 'invoice_send', 'reminder_1'
+ * @param {string}            [opts.toOverride]  Override the recipient (defaults to client.email)
+ * @param {string}            [opts.subjectOverride]
+ * @param {string}            [opts.bodyOverride]
+ * @param {number}            [opts.overrideDaysOverdue]  For reminders
+ */
+async function sendBusinessEmail(opts) {
+    const ctx = await loadEmailContext(opts.kind, opts.docId);
+    if (!ctx) throw new Error(`${opts.kind} not found`);
+    const { doc, client, profile } = ctx;
+
+    const to = opts.toOverride || client?.email;
+    if (!to) throw new Error(`No recipient email — ${opts.kind === 'invoice' ? 'invoice' : 'quote'} client has no email on file`);
+
+    const templates = await mailer.getTemplates();
+    const tpl = templates[opts.templateKey];
+    if (!tpl && !opts.subjectOverride) throw new Error(`Template '${opts.templateKey}' not found and no override provided`);
+
+    const vars = buildTemplateVars({ doc, client, profile, kind: opts.kind, overrideDaysOverdue: opts.overrideDaysOverdue });
+    const subject = opts.subjectOverride || mailer.fillTemplate(tpl.subject, vars);
+    const bodyText = opts.bodyOverride || mailer.fillTemplate(tpl.body, vars);
+
+    // Generate PDF attachment
+    const pdfBuffer = opts.kind === 'invoice'
+        ? await generateInvoicePDF(doc, client, profile)
+        : await generateQuotePDF(doc, client, profile);
+    const docNum = opts.kind === 'invoice' ? doc.invoice_number : doc.quote_number;
+    const filename = `${opts.kind === 'invoice' ? 'Invoice' : 'Quote'}_${docNum || doc.id.slice(0, 8)}.pdf`;
+
+    const result = await mailer.sendMail({
+        to,
+        subject,
+        text: bodyText,
+        html: bodyText.replace(/\n/g, '<br>'),
+        attachments: [{ filename, content: pdfBuffer, contentType: 'application/pdf' }],
+        related_type: opts.kind,
+        related_id:   doc.id,
+    });
+
+    // Log a client interaction so it appears in the CRM history
+    if (client) {
+        const interactionType = opts.templateKey.startsWith('reminder')
+            ? `Reminder email sent (${opts.templateKey})`
+            : `${opts.kind === 'invoice' ? 'Invoice' : 'Quote'} ${docNum} sent`;
+        await db.query(
+            `INSERT INTO business_client_interactions (client_id, type, date, summary, notes)
+             VALUES ($1, 'email', NOW(), $2, $3)`,
+            [client.id, interactionType, `To: ${to}\nSubject: ${subject}`]
+        ).catch(e => console.error('[send] interaction log failed:', e.message));
+    }
+
+    return { ok: true, log_id: result.log_id, to, subject };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SEND INVOICE / QUOTE / REMINDER
+// ══════════════════════════════════════════════════════════════════════════
+
+router.post('/invoices/:id/send', asyncHandler(async (req, res) => {
+    try {
+        const result = await sendBusinessEmail({
+            kind: 'invoice',
+            docId: req.params.id,
+            templateKey: 'invoice_send',
+            toOverride:      req.body.to,
+            subjectOverride: req.body.subject,
+            bodyOverride:    req.body.body,
+        });
+        // Auto-promote draft → sent
+        await db.query(
+            `UPDATE business_invoices SET status='sent' WHERE id=$1 AND status='draft'`,
+            [req.params.id]
+        );
+        res.json(result);
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+}));
+
+router.post('/quotes/:id/send', asyncHandler(async (req, res) => {
+    try {
+        const result = await sendBusinessEmail({
+            kind: 'quote',
+            docId: req.params.id,
+            templateKey: 'quote_send',
+            toOverride:      req.body.to,
+            subjectOverride: req.body.subject,
+            bodyOverride:    req.body.body,
+        });
+        await db.query(
+            `UPDATE business_quotes SET status='sent' WHERE id=$1 AND status='draft'`,
+            [req.params.id]
+        );
+        res.json(result);
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+}));
+
+/**
+ * Manual reminder send — caller picks reminder level (1, 2, or 3)
+ * or omits it to let the server pick based on days overdue.
+ */
+router.post('/invoices/:id/send-reminder', asyncHandler(async (req, res) => {
+    const { rows } = await db.query(`SELECT * FROM business_invoices WHERE id=$1`, [req.params.id]);
+    const inv = rows[0];
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const days = daysOverdue(inv.due_date);
+    let level = parseInt(req.body.level, 10);
+    if (!level || level < 1 || level > 3) {
+        // Auto-pick
+        if (days >= 30) level = 3;
+        else if (days >= 14) level = 2;
+        else level = 1;
+    }
+    const templateKey = `reminder_${level}`;
+
+    try {
+        const result = await sendBusinessEmail({
+            kind: 'invoice',
+            docId: req.params.id,
+            templateKey,
+            toOverride:      req.body.to,
+            subjectOverride: req.body.subject,
+            bodyOverride:    req.body.body,
+            overrideDaysOverdue: days,
+        });
+        // Mark the reminder column so the cron doesn't double-send
+        await db.query(
+            `UPDATE business_invoices SET reminder_${level}_sent_at = NOW() WHERE id=$1`,
+            [req.params.id]
+        );
+        res.json({ ...result, level, days_overdue: days });
+    } catch (e) {
+        res.status(400).json({ error: e.message });
+    }
+}));
+
+// Helpers _sendBusinessEmail and _daysOverdue are exported at file end
+// (after module.exports = router) so they're attached to the router object.
+
 
 // ══════════════════════════════════════════════════════════════════════════
 // DASHBOARD
@@ -631,3 +822,7 @@ router.delete('/expenses/:id', asyncHandler(async (req, res) => {
 }));
 
 module.exports = router;
+
+// Exposed for the daily reminder cron job in index.js to call directly
+module.exports._sendBusinessEmail = sendBusinessEmail;
+module.exports._daysOverdue       = daysOverdue;

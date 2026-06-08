@@ -70,8 +70,11 @@ app.use((err, req, res, next) => {  // eslint-disable-line no-unused-vars
     res.status(status).json({ error: message });
 });
 
-// ── Scheduled jobs ────────────────────────────────────────────────────────
-// Weekly log purge (Sun 03:00) — drops logs older than 30 days.
+// ══════════════════════════════════════════════════════════════════════════
+// Scheduled jobs
+// ══════════════════════════════════════════════════════════════════════════
+
+// Weekly log purge (Sun 03:00)
 cron.schedule('0 3 * * 0', async () => {
     try {
         const { rowCount } = await db.query(`DELETE FROM app_logs WHERE created_at < NOW() - INTERVAL '30 days'`);
@@ -79,7 +82,7 @@ cron.schedule('0 3 * * 0', async () => {
     } catch (e) { console.error('[cron] log purge failed:', e.message); }
 });
 
-// Daily 00:10 — promote 'sent' invoices to 'overdue' if past due date.
+// Daily 00:10 — mark overdue invoices
 cron.schedule('10 0 * * *', async () => {
     try {
         const { rowCount } = await db.query(`UPDATE business_invoices SET status='overdue' WHERE status='sent' AND due_date < CURRENT_DATE`);
@@ -87,7 +90,7 @@ cron.schedule('10 0 * * *', async () => {
     } catch (e) { console.error('[cron] overdue check failed:', e.message); }
 });
 
-// Daily 00:15 — expire quotes past their valid_until date.
+// Daily 00:15 — expire stale quotes
 cron.schedule('15 0 * * *', async () => {
     try {
         const { rowCount } = await db.query(`UPDATE business_quotes SET status='expired' WHERE status IN ('draft','sent') AND valid_until IS NOT NULL AND valid_until < CURRENT_DATE`);
@@ -95,9 +98,58 @@ cron.schedule('15 0 * * *', async () => {
     } catch (e) { console.error('[cron] quote expiry failed:', e.message); }
 });
 
-// ── Migration runner ──────────────────────────────────────────────────────
-// Runs at startup before the HTTP server binds. Idempotent — if nothing is
-// pending, this is a sub-second no-op.
+// Daily 09:00 — send payment reminders for overdue invoices.
+// At 7/14/30 days past due, send reminder_1/2/3 respectively, IF that
+// reminder hasn't already been sent. Idempotent — safe to run repeatedly.
+cron.schedule('0 9 * * *', async () => {
+    try {
+        const { rows: overdue } = await db.query(`
+            SELECT i.id, i.due_date, i.client_id,
+                   i.reminder_1_sent_at, i.reminder_2_sent_at, i.reminder_3_sent_at,
+                   c.email AS client_email
+            FROM business_invoices i
+            LEFT JOIN business_clients c ON c.id = i.client_id
+            WHERE i.status = 'overdue'
+              AND c.email IS NOT NULL
+              AND c.email <> ''
+        `);
+
+        let sent = 0;
+        for (const inv of overdue) {
+            const days = businessRouter._daysOverdue(inv.due_date);
+            let level = 0;
+            if (days >= 30 && !inv.reminder_3_sent_at) level = 3;
+            else if (days >= 14 && !inv.reminder_2_sent_at) level = 2;
+            else if (days >= 7 && !inv.reminder_1_sent_at) level = 1;
+            if (!level) continue;
+
+            try {
+                await businessRouter._sendBusinessEmail({
+                    kind: 'invoice',
+                    docId: inv.id,
+                    templateKey: `reminder_${level}`,
+                    overrideDaysOverdue: days,
+                });
+                await db.query(
+                    `UPDATE business_invoices SET reminder_${level}_sent_at = NOW() WHERE id=$1`,
+                    [inv.id]
+                );
+                await logger.info('cron', `Sent reminder ${level} for invoice ${inv.id} (${days}d overdue)`);
+                sent++;
+            } catch (e) {
+                console.error(`[cron] reminder send failed for invoice ${inv.id}:`, e.message);
+                await logger.warn('cron', `Reminder send failed for invoice ${inv.id}: ${e.message}`);
+            }
+        }
+        if (sent > 0) await logger.info('cron', `Daily reminder run sent ${sent} email(s)`);
+    } catch (e) {
+        console.error('[cron] reminder run failed:', e.message);
+    }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// Migrations + startup
+// ══════════════════════════════════════════════════════════════════════════
 async function runMigrations() {
     console.log('[migrate] Checking for pending migrations...');
     try {
@@ -113,20 +165,16 @@ async function runMigrations() {
             direction:       'up',
             migrationsTable: 'pgmigrations',
             log:             (msg) => console.log(`[migrate] ${msg}`),
-            // Skip JS files — we standardise on SQL migrations
             singleTransaction: true,
         });
         console.log(`[migrate] Done. Applied ${Array.isArray(applied) ? applied.length : 0} migration(s).`);
     } catch (e) {
         console.error('[migrate] FATAL: migration failed:', e.message);
-        console.error('[migrate] Backend will not start. Inspect the DB and pgmigrations table before retrying.');
         process.exit(1);
     }
 }
 
-// ── Startup ───────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-
 (async () => {
     await runMigrations();
     app.listen(PORT, () => {
