@@ -184,7 +184,8 @@ function drawTotals(doc, amount, vatAmount, startY) {
     }
 
     // Total row — highlighted
-    doc.rect(labelX - 10, y, 175, 28).fill(BRAND.dark);
+    const barRight = doc.page.width - 40;   // align with table right edge
+    doc.rect(labelX - 10, y, barRight - (labelX - 10), 28).fill(BRAND.dark);
     doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11);
     doc.text('TOTAL',           labelX, y + 9);
     doc.fillColor(BRAND.accent).fontSize(13).text(fmtGBP(total), valueX, y + 8, { width: 75, align: 'right' });

@@ -16,6 +16,7 @@ const settingsRouter  = require('./routes/settings');
 const businessRouter  = require('./routes/business');
 const trackersRouter  = require('./routes/trackers');
 const marketingRouter = require('./routes/marketing');
+const debtsRouter     = require('./routes/debts');
 const logger         = require('./utils/logger');
 const db             = require('./db/pool');
 
@@ -61,6 +62,7 @@ app.use('/settings',  requireAuth, settingsRouter);
 app.use('/business',  requireAuth, businessRouter);
 app.use('/trackers',  requireAuth, trackersRouter);
 app.use('/marketing', requireAuth, marketingRouter);
+app.use('/debts',     requireAuth, debtsRouter);
 app.use('/',          requireAuth, contentRouter);
 
 app.use((err, req, res, next) => {  // eslint-disable-line no-unused-vars
@@ -73,8 +75,6 @@ app.use((err, req, res, next) => {  // eslint-disable-line no-unused-vars
 // ══════════════════════════════════════════════════════════════════════════
 // Scheduled jobs
 // ══════════════════════════════════════════════════════════════════════════
-
-// Weekly log purge (Sun 03:00)
 cron.schedule('0 3 * * 0', async () => {
     try {
         const { rowCount } = await db.query(`DELETE FROM app_logs WHERE created_at < NOW() - INTERVAL '30 days'`);
@@ -82,7 +82,6 @@ cron.schedule('0 3 * * 0', async () => {
     } catch (e) { console.error('[cron] log purge failed:', e.message); }
 });
 
-// Daily 00:10 — mark overdue invoices
 cron.schedule('10 0 * * *', async () => {
     try {
         const { rowCount } = await db.query(`UPDATE business_invoices SET status='overdue' WHERE status='sent' AND due_date < CURRENT_DATE`);
@@ -90,7 +89,6 @@ cron.schedule('10 0 * * *', async () => {
     } catch (e) { console.error('[cron] overdue check failed:', e.message); }
 });
 
-// Daily 00:15 — expire stale quotes
 cron.schedule('15 0 * * *', async () => {
     try {
         const { rowCount } = await db.query(`UPDATE business_quotes SET status='expired' WHERE status IN ('draft','sent') AND valid_until IS NOT NULL AND valid_until < CURRENT_DATE`);
@@ -98,9 +96,7 @@ cron.schedule('15 0 * * *', async () => {
     } catch (e) { console.error('[cron] quote expiry failed:', e.message); }
 });
 
-// Daily 09:00 — send payment reminders for overdue invoices.
-// At 7/14/30 days past due, send reminder_1/2/3 respectively, IF that
-// reminder hasn't already been sent. Idempotent — safe to run repeatedly.
+// Daily 09:00 — payment reminder cron for overdue invoices (Stage B.2)
 cron.schedule('0 9 * * *', async () => {
     try {
         const { rows: overdue } = await db.query(`
@@ -144,6 +140,28 @@ cron.schedule('0 9 * * *', async () => {
         if (sent > 0) await logger.info('cron', `Daily reminder run sent ${sent} email(s)`);
     } catch (e) {
         console.error('[cron] reminder run failed:', e.message);
+    }
+});
+
+// Daily 00:20 — advance debt plan next_due_date for plans where today >= next_due_date
+// AND no payment lands on that date (handler does the optimistic case).
+// This is a safety net for plans that fell behind without a payment being recorded.
+cron.schedule('20 0 * * *', async () => {
+    try {
+        const { rows } = await db.query(`
+            SELECT id, frequency, next_due_date FROM debt_plans
+            WHERE is_active = TRUE
+              AND frequency <> 'one_off'
+              AND next_due_date IS NOT NULL
+              AND next_due_date < CURRENT_DATE
+        `);
+        for (const p of rows) {
+            // Just log it — don't auto-advance, because that masks arrears.
+            // The frontend computes "days overdue" from next_due_date.
+            await logger.warn('cron', `Debt plan ${p.id} is overdue (next_due ${p.next_due_date})`);
+        }
+    } catch (e) {
+        console.error('[cron] debt plan check failed:', e.message);
     }
 });
 

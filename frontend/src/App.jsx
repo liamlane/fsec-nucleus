@@ -14,6 +14,7 @@ import Notes        from './components/notes/Notes.jsx';
 import Calendar     from './components/calendar/Calendar.jsx';
 import Journal      from './components/journal/Journal.jsx';
 import TimeTracking from './components/timetracking/TimeTracking.jsx';
+import Debts        from './components/debts/Debts.jsx';
 import Settings     from './components/Settings.jsx';
 
 const Protected = ({ children }) => {
@@ -21,8 +22,6 @@ const Protected = ({ children }) => {
   return isAuth ? children : <Navigate to="/login" replace />;
 };
 
-// Redirect / to the user's preferred default landing route.
-// Falls through to Dashboard if prefs haven't loaded yet or target is invalid.
 const LandingRedirect = () => {
   const { prefs, loaded } = usePrefs();
   if (!loaded) return <Dashboard />;
@@ -42,6 +41,7 @@ export default function App() {
               <Route index               element={<LandingRedirect />} />
               <Route path="dashboard"    element={<Dashboard />} />
               <Route path="finance/*"    element={<Finance />} />
+              <Route path="debts/*"      element={<Debts />} />
               <Route path="business/*"   element={<Business />} />
               <Route path="marketing/*"  element={<Marketing />} />
               <Route path="goals"        element={<Goals />} />

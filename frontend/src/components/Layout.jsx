@@ -6,6 +6,7 @@ import { get } from '../utils/api.js';
 const NAV = [
   { to: '/',          label: 'Dashboard', icon: '⬡', exact: true },
   { to: '/finance',   label: 'Finance',   icon: '₤' },
+  { to: '/debts',     label: 'Debts',     icon: '⚖' },
   { to: '/business',  label: 'Business',  icon: '✦' },
   { to: '/marketing', label: 'Marketing', icon: '◊' },
   { to: '/goals',     label: 'Goals',     icon: '◎' },
@@ -24,9 +25,9 @@ function BottomNav() {
   const MOBILE_NAV = [
     NAV[0],  // Dashboard
     NAV[1],  // Finance
-    NAV[2],  // Business
-    NAV[3],  // Marketing
-    NAV[10], // Time
+    NAV[3],  // Business
+    NAV[4],  // Marketing
+    NAV[11], // Time
   ];
   return (
     <nav className="bottom-nav">
