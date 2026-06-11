@@ -49,10 +49,10 @@ const STATUS_LABELS = {
 };
 
 const PRIORITY_LABELS = {
-  critical: { label: '\u26a0 Critical', colour: 'var(--red)',        bg: 'rgba(255,77,109,0.15)' },
-  high:     { label: '\u2191 High',     colour: 'var(--amber)',      bg: 'rgba(255,181,71,0.15)' },
+  critical: { label: '⚠ Critical', colour: 'var(--red)',        bg: 'rgba(255,77,109,0.15)' },
+  high:     { label: '↑ High',     colour: 'var(--amber)',      bg: 'rgba(255,181,71,0.15)' },
   standard: { label: 'Standard',        colour: 'var(--blue)',       bg: 'rgba(77,166,255,0.15)' },
-  low:      { label: '\u2193 Low',      colour: 'var(--text-muted)', bg: 'var(--bg-secondary)' },
+  low:      { label: '↓ Low',      colour: 'var(--text-muted)', bg: 'var(--bg-secondary)' },
 };
 
 const FREQUENCY_LABELS = {
@@ -221,7 +221,7 @@ function DashboardView({ dashboard, onSelect }) {
             <tbody>{dashboard.recent_payments.map(p => (
               <tr key={p.id}><td style={{ fontSize: 13 }}>{fmt.dateShort(p.date)}</td><td style={{ fontSize: 13 }}>{p.creditor_name}</td>
               <td style={{ fontSize: 13, fontWeight: 500, textAlign: 'right', color: 'var(--green)', fontFamily: 'var(--font-mono)' }}>{fmt.currency(p.amount)}</td>
-              <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.method?.replace(/_/g, ' ') || '\u2014'}</td></tr>
+              <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.method?.replace(/_/g, ' ') || '—'}</td></tr>
             ))}</tbody></table>
           </div>
         </div>
@@ -243,10 +243,10 @@ function DebtList({ debts, onSelect }) {
           <td><PriorityBadge level={d.priority_level} /></td>
           <td style={{ fontWeight: 500 }}>{d.creditor_name}{d.is_overdue && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--red)' }}>{d.days_overdue}d overdue</span>}</td>
           <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{DEBT_TYPES[d.debt_type]?.label || d.debt_type}</td>
-          <td style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{d.account_reference || d.their_reference || '\u2014'}</td>
+          <td style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{d.account_reference || d.their_reference || '—'}</td>
           <td style={{ textAlign: 'right', fontWeight: 500, fontFamily: 'var(--font-mono)' }}>{fmt.currency(d.current_balance)}</td>
           <td><StatusBadge status={d.status} /></td>
-          <td style={{ fontSize: 16, color: 'var(--text-muted)' }}>\u203a</td>
+          <td style={{ fontSize: 16, color: 'var(--text-muted)' }}>›</td>
         </tr>
       ))}</tbody></table>
     </div>
@@ -295,14 +295,14 @@ function DebtDetail({ debtId, onClose, onEdit, onDeleted }) {
             </div>
             <h2 style={{ margin: 0 }}>{debt.creditor_name}</h2>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-              {DEBT_TYPES[debt.debt_type]?.label}{debt.creditor_type && ` \u00b7 ${CREDITOR_TYPES[debt.creditor_type] || debt.creditor_type}`}
-              {debt.original_creditor && ` \u00b7 originally ${debt.original_creditor}`}
+              {DEBT_TYPES[debt.debt_type]?.label}{debt.creditor_type && ` · ${CREDITOR_TYPES[debt.creditor_type] || debt.creditor_type}`}
+              {debt.original_creditor && ` · originally ${debt.original_creditor}`}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-ghost btn-sm" onClick={() => onEdit(debt)}>Edit</button>
             <button className="btn btn-ghost btn-sm" onClick={async () => { await patch(`/debts/${debtId}`, { is_archived: !debt.is_archived }); onDeleted(); }}>{debt.is_archived ? 'Unarchive' : 'Archive'}</button>
-            <button className="btn-icon btn-sm" onClick={onClose}>\u00d7</button>
+            <button className="btn-icon btn-sm" onClick={onClose}>×</button>
           </div>
         </div>
 
@@ -383,9 +383,9 @@ function PaymentsPane({ payments, onAdd, onDelete }) {
         {payments.map(p => (<tr key={p.id}>
           <td style={{ fontSize: 13 }}>{fmt.date(p.date)}</td>
           <td style={{ fontSize: 13, fontFamily: 'var(--font-mono)', textAlign: 'right', color: 'var(--green)' }}>{fmt.currency(p.amount)}</td>
-          <td style={{ fontSize: 12 }}>{p.method?.replace(/_/g, ' ') || '\u2014'}</td>
-          <td style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{p.reference || '\u2014'}</td>
-          <td><button className="btn-icon btn-sm" onClick={() => onDelete(p.id)}>\u00d7</button></td>
+          <td style={{ fontSize: 12 }}>{p.method?.replace(/_/g, ' ') || '—'}</td>
+          <td style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{p.reference || '—'}</td>
+          <td><button className="btn-icon btn-sm" onClick={() => onDelete(p.id)}>×</button></td>
         </tr>))}
       </tbody></table>
     </div>
@@ -403,7 +403,7 @@ function PlanPane({ plans, onAdd, onEnd }) {
           <Stat label="Amount" value={fmt.currency(active.amount)} />
           <Stat label="Frequency" value={FREQUENCY_LABELS[active.frequency] || active.frequency} />
           <Stat label="Start" value={fmt.date(active.start_date)} />
-          <Stat label="Next due" value={active.next_due_date ? fmt.date(active.next_due_date) : '\u2014'} />
+          <Stat label="Next due" value={active.next_due_date ? fmt.date(active.next_due_date) : '—'} />
           {active.end_date && <Stat label="End" value={fmt.date(active.end_date)} />}
         </div>
         {active.agreement_reference && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Agreement: <code>{active.agreement_reference}</code></div>}
@@ -444,7 +444,7 @@ function InteractionsPane({ interactions, onAdd, onDelete }) {
             <div style={{ fontSize: 13, fontWeight: 500 }}>{i.summary}</div>
             {i.notes && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, whiteSpace: 'pre-wrap' }}>{i.notes}</div>}
           </div>
-          <button className="btn-icon btn-sm" onClick={() => onDelete(i.id)}>\u00d7</button>
+          <button className="btn-icon btn-sm" onClick={() => onDelete(i.id)}>×</button>
         </div>
       </div>
     ))}
@@ -535,7 +535,7 @@ function DebtFormModal({ mode, existing, onClose, onSaved }) {
             <input value={form.creditor_name || ''} onChange={e => set('creditor_name', e.target.value)} /></div>
           <div className="form-group"><label className="form-label">Creditor type</label>
             <select value={form.creditor_type || ''} onChange={e => set('creditor_type', e.target.value)}>
-              <option value="">\u2014</option>
+              <option value="">—</option>
               {Object.entries(CREDITOR_TYPES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select></div>
         </div>

@@ -280,13 +280,20 @@ function DataTab() {
   const [logLevel, setLogLevel]   = useState('');
   const [logModule, setLogModule] = useState('');
 
-  const loadLogs = async () => {
+const loadLogs = async () => {
     const params = new URLSearchParams();
     params.set('limit', '100');
     if (logLevel)  params.set('level',  logLevel);
     if (logModule) params.set('module', logModule);
-    const data = await get(`/settings/logs?${params}`);
-    if (data) setLogs(data);
+    try {
+      const data = await get(`/settings/logs?${params}`);
+      if (Array.isArray(data))       setLogs(data);
+      else if (data && data.logs)    setLogs(data.logs);
+      else                           setLogs([]);
+    } catch (e) {
+      console.error('[logs] load failed:', e.message);
+      setLogs([]);
+    }
   };
 
   useEffect(() => { loadLogs(); }, [logLevel, logModule]);
