@@ -3,31 +3,73 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { get } from '../utils/api.js';
 
-const NAV = [
-  { to: '/',          label: 'Dashboard', icon: '⬡', exact: true },
+// ── Nav structure: grouped into Work + Personal ────────────────────────
+const WORK_NAV = [
+  { to: '/business',  label: 'Business',  icon: '✦' },
+  { to: '/tickets',   label: 'Tickets',   icon: '▣' },
+  { to: '/marketing', label: 'Marketing', icon: '◊' },
+  { to: '/time',      label: 'Time',      icon: '◷' },
+];
+
+const PERSONAL_NAV = [
   { to: '/finance',   label: 'Finance',   icon: '₤' },
   { to: '/debts',     label: 'Debts',     icon: '⚖' },
-  { to: '/business',  label: 'Business',  icon: '✦' },
-  { to: '/marketing', label: 'Marketing', icon: '◊' },
   { to: '/goals',     label: 'Goals',     icon: '◎' },
   { to: '/habits',    label: 'Habits',    icon: '⊕' },
   { to: '/trackers',  label: 'Trackers',  icon: '◉' },
   { to: '/notes',     label: 'Notes',     icon: '≡' },
   { to: '/calendar',  label: 'Calendar',  icon: '⊞' },
   { to: '/journal',   label: 'Journal',   icon: '◈' },
-  { to: '/time',      label: 'Time',      icon: '◷' },
-  { to: '/settings',  label: 'Settings',  icon: '⚙' },
 ];
+
+// Flat list for search routing + mobile nav
+const ALL_NAV = [
+  { to: '/', label: 'Dashboard', icon: '⬡', exact: true },
+  ...WORK_NAV,
+  ...PERSONAL_NAV,
+  { to: '/settings', label: 'Settings', icon: '⚙' },
+];
+
+function NavSection({ title, items, collapsed, onToggle, onNavClick }) {
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <button
+        onClick={onToggle}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          width: '100%', padding: '8px 16px', background: 'transparent',
+          border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
+          fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+        }}
+      >
+        {title}
+        <span style={{ fontSize: 9, opacity: 0.6, transition: 'transform 0.15s', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
+      </button>
+      {!collapsed && items.map(item => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.exact}
+          onClick={onNavClick}
+          className={({ isActive }) => isActive ? 'active' : ''}
+        >
+          <span className="nav-icon">{item.icon}</span>
+          <span className="nav-label">{item.label}</span>
+        </NavLink>
+      ))}
+    </div>
+  );
+}
 
 function BottomNav() {
   const location = useLocation();
-  // Show a subset on the mobile bottom bar — the full list is in the drawer
   const MOBILE_NAV = [
-    NAV[0],  // Dashboard
-    NAV[1],  // Finance
-    NAV[3],  // Business
-    NAV[4],  // Marketing
-    NAV[11], // Time
+    { to: '/',         label: 'Home',     icon: '⬡', exact: true },
+    { to: '/business', label: 'Business', icon: '✦' },
+    { to: '/tickets',  label: 'Tickets',  icon: '▣' },
+    { to: '/finance',  label: 'Finance',  icon: '₤' },
+    { to: '/time',     label: 'Time',     icon: '◷' },
   ];
   return (
     <nav className="bottom-nav">
@@ -53,6 +95,8 @@ export default function Layout() {
   const [searchResults, setSearchResults] = useState([]);
   const [showSearch, setShowSearch]       = useState(false);
   const [drawerOpen, setDrawerOpen]       = useState(false);
+  const [workCollapsed, setWorkCollapsed]       = useState(false);
+  const [personalCollapsed, setPersonalCollapsed] = useState(false);
 
   const today = new Date().toLocaleDateString('en-GB', {
     weekday: 'long', day: 'numeric', month: 'short',
@@ -87,12 +131,13 @@ export default function Layout() {
     else if (type === 'habit')       path = '/habits';
     else if (type === 'payee')       path = '/finance';
     else if (type === 'substance')   path = '/habits';
-    // Business
+    // Business / Work
     else if (type === 'client')      path = '/business';
     else if (type === 'project')     path = '/business';
     else if (type === 'invoice')     path = '/business';
     else if (type === 'quote')       path = '/business';
     else if (type === 'expense')     path = '/business';
+    else if (type === 'ticket')      path = '/tickets';
     // Marketing
     else if (type === 'social_post') path = '/marketing';
     else if (type === 'idea')        path = '/marketing';
@@ -112,8 +157,10 @@ export default function Layout() {
     journal: 'Journal', habit: 'Habit', payee: 'Payee', substance: 'Substance',
     client: 'Client', project: 'Project', invoice: 'Invoice', quote: 'Quote',
     expense: 'Expense', social_post: 'Post', idea: 'Idea', campaign: 'Campaign',
-    media: 'Media', contact: 'Contact',
+    media: 'Media', contact: 'Contact', ticket: 'Ticket',
   };
+
+  const closeDrawer = () => setDrawerOpen(false);
 
   return (
     <div className="app-shell">
@@ -135,18 +182,31 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.exact}
-              onClick={() => setDrawerOpen(false)}
-              className={({ isActive }) => isActive ? 'active' : ''}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              <span className="nav-label">{item.label}</span>
-            </NavLink>
-          ))}
+          {/* Dashboard — always at top */}
+          <NavLink to="/" end onClick={closeDrawer} className={({ isActive }) => isActive ? 'active' : ''}>
+            <span className="nav-icon">⬡</span>
+            <span className="nav-label">Dashboard</span>
+          </NavLink>
+
+          <div style={{ height: 6 }} />
+
+          {/* Work section */}
+          <NavSection title="Work" items={WORK_NAV}
+            collapsed={workCollapsed} onToggle={() => setWorkCollapsed(c => !c)}
+            onNavClick={closeDrawer} />
+
+          {/* Personal section */}
+          <NavSection title="Personal" items={PERSONAL_NAV}
+            collapsed={personalCollapsed} onToggle={() => setPersonalCollapsed(c => !c)}
+            onNavClick={closeDrawer} />
+
+          <div style={{ height: 6 }} />
+
+          {/* Settings — always at bottom of nav */}
+          <NavLink to="/settings" onClick={closeDrawer} className={({ isActive }) => isActive ? 'active' : ''}>
+            <span className="nav-icon">⚙</span>
+            <span className="nav-label">Settings</span>
+          </NavLink>
         </nav>
 
         <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
@@ -154,7 +214,7 @@ export default function Layout() {
         </div>
       </aside>
 
-      {drawerOpen && <div className="drawer-overlay" onClick={() => setDrawerOpen(false)} />}
+      {drawerOpen && <div className="drawer-overlay" onClick={closeDrawer} />}
 
       {/* Main */}
       <main className="app-main">
