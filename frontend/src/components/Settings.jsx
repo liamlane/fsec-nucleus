@@ -8,7 +8,9 @@ const TABS = ['General', 'Appearance', 'Security', 'Data', 'Reference', 'About']
 const LANDING_OPTIONS = [
   { value: '/',           label: 'Dashboard' },
   { value: '/finance',    label: 'Finance' },
+  { value: '/debts',      label: 'Debts' },
   { value: '/business',   label: 'Business' },
+  { value: '/tickets',    label: 'Tickets' },
   { value: '/marketing',  label: 'Marketing' },
   { value: '/goals',      label: 'Goals' },
   { value: '/habits',     label: 'Habits' },
@@ -36,14 +38,13 @@ const DATE_FORMATS = [
   { value: 'long',  label: '1 March 2026 (long)' },
 ];
 
-const CURRENCY_SYMBOLS = ['£', '$', '€', '¥', 'kr', 'CHF', 'A$', 'C$'];
+const CURRENCY_SYMBOLS = ['\u00a3', '$', '\u20ac', '\u00a5', 'kr', 'CHF', 'A$', 'C$'];
 
 export default function Settings() {
   const { prefs, setPref, setManyPrefs, resetToDefaults, DEFAULTS } = usePrefs();
   const { logout } = useAuth();
   const [tab, setTab] = useState('General');
 
-  // Keep the api.js confirm helper in sync with the pref
   useEffect(() => { setConfirmDestructive(prefs.confirm_destructive); }, [prefs.confirm_destructive]);
 
   return (
@@ -57,17 +58,13 @@ export default function Settings() {
 
       <div className="tabs" style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
         {TABS.map(t => (
-          <button key={t}
-            onClick={() => setTab(t)}
-            style={{
-              padding: '10px 16px',
-              background: 'transparent',
-              border: 'none',
-              borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent',
-              color: tab === t ? 'var(--text-primary)' : 'var(--text-muted)',
-              fontSize: 14, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap',
-              transition: 'all 0.15s',
-            }}>{t}</button>
+          <button key={t} onClick={() => setTab(t)} style={{
+            padding: '10px 16px', background: 'transparent', border: 'none',
+            borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent',
+            color: tab === t ? 'var(--text-primary)' : 'var(--text-muted)',
+            fontSize: 14, fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap',
+            transition: 'all 0.15s',
+          }}>{t}</button>
         ))}
       </div>
 
@@ -136,7 +133,7 @@ function GeneralTab({ prefs, setPref }) {
 // ════════════════════════════════════════════════════════════════════════
 // APPEARANCE TAB
 // ════════════════════════════════════════════════════════════════════════
-function AppearanceTab({ prefs, setPref, resetToDefaults, DEFAULTS }) {
+function AppearanceTab({ prefs, setPref, resetToDefaults }) {
   const [customColour, setCustomColour] = useState(prefs.accent_colour);
 
   return (
@@ -144,28 +141,20 @@ function AppearanceTab({ prefs, setPref, resetToDefaults, DEFAULTS }) {
       <Section title="Accent colour" hint="Used for buttons, highlights, and active states.">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
           {ACCENT_PRESETS.map(c => (
-            <button key={c.value}
-              onClick={() => { setPref('accent_colour', c.value); setCustomColour(c.value); }}
-              title={c.name}
-              style={{
-                width: 44, height: 44, borderRadius: 10,
-                background: c.value,
+            <button key={c.value} onClick={() => { setPref('accent_colour', c.value); setCustomColour(c.value); }}
+              title={c.name} style={{
+                width: 44, height: 44, borderRadius: 10, background: c.value, cursor: 'pointer',
                 border: prefs.accent_colour === c.value ? '3px solid var(--text-primary)' : '3px solid transparent',
-                cursor: 'pointer',
                 transition: 'transform 0.1s',
-              }}
-            />
+              }} />
           ))}
         </div>
         <Row label="Custom colour" hint="Or pick any hex value.">
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input type="color" value={customColour}
-                   onChange={e => setCustomColour(e.target.value)}
+            <input type="color" value={customColour} onChange={e => setCustomColour(e.target.value)}
                    style={{ width: 50, height: 36, padding: 0, border: 'none', background: 'transparent' }} />
-            <input type="text" value={customColour}
-                   onChange={e => setCustomColour(e.target.value)}
-                   placeholder="#7c6aff"
-                   style={{ width: 110, fontFamily: 'var(--font-mono)' }} />
+            <input type="text" value={customColour} onChange={e => setCustomColour(e.target.value)}
+                   placeholder="#7c6aff" style={{ width: 110, fontFamily: 'var(--font-mono)' }} />
             <button className="btn btn-ghost btn-sm"
                     onClick={() => setPref('accent_colour', customColour)}
                     disabled={!/^#[0-9a-fA-F]{6}$/.test(customColour)}>Apply</button>
@@ -174,27 +163,20 @@ function AppearanceTab({ prefs, setPref, resetToDefaults, DEFAULTS }) {
       </Section>
 
       <Section title="Density" hint="Tighter or looser spacing throughout the app.">
-        <Toggle
-          options={[{ v: 'compact', l: 'Compact' }, { v: 'normal', l: 'Normal' }, { v: 'spacious', l: 'Spacious' }]}
-          value={prefs.density}
-          onChange={v => setPref('density', v)} />
+        <Toggle options={[{ v: 'compact', l: 'Compact' }, { v: 'normal', l: 'Normal' }, { v: 'spacious', l: 'Spacious' }]}
+          value={prefs.density} onChange={v => setPref('density', v)} />
       </Section>
 
       <Section title="Font size" hint="Make text bigger or smaller.">
-        <Toggle
-          options={[{ v: 0.875, l: 'Small' }, { v: 1.0, l: 'Normal' }, { v: 1.125, l: 'Large' }]}
-          value={prefs.font_scale}
-          onChange={v => setPref('font_scale', v)} />
+        <Toggle options={[{ v: 0.875, l: 'Small' }, { v: 1.0, l: 'Normal' }, { v: 1.125, l: 'Large' }]}
+          value={prefs.font_scale} onChange={v => setPref('font_scale', v)} />
       </Section>
 
       <div style={{ marginTop: 32, padding: 16, background: 'rgba(255,77,109,0.08)', border: '1px solid rgba(255,77,109,0.2)', borderRadius: 8 }}>
-        <div style={{ fontSize: 13, marginBottom: 10 }}>Reset all appearance preferences to defaults.</div>
-        <button className="btn btn-ghost"
-                onClick={() => {
-                  if (window.confirm('Reset ALL preferences (including general settings) to defaults?')) {
-                    resetToDefaults();
-                  }
-                }}>Reset all preferences</button>
+        <div style={{ fontSize: 13, marginBottom: 10 }}>Reset all preferences to defaults.</div>
+        <button className="btn btn-ghost" onClick={() => {
+          if (window.confirm('Reset ALL preferences to defaults?')) resetToDefaults();
+        }}>Reset all preferences</button>
       </div>
     </div>
   );
@@ -211,37 +193,24 @@ function SecurityTab({ logout }) {
 
   const submit = async () => {
     setStatus(null);
-    if (newPin !== confirmPin) {
-      setStatus({ kind: 'err', message: 'New PINs do not match.' }); return;
-    }
-    if (!/^\d{4,8}$/.test(newPin)) {
-      setStatus({ kind: 'err', message: 'PIN must be 4–8 digits.' }); return;
-    }
+    if (newPin !== confirmPin) { setStatus({ kind: 'err', message: 'New PINs do not match.' }); return; }
+    if (!/^\d{4,8}$/.test(newPin)) { setStatus({ kind: 'err', message: 'PIN must be 4\u20138 digits.' }); return; }
     try {
       const r = await post('/settings/change-pin', { current_pin: currentPin, new_pin: newPin });
-      setStatus({ kind: 'ok', message: r.note || 'PIN hash generated — see below.', hash: r.hash });
+      setStatus({ kind: 'ok', message: r.note || 'PIN hash generated.', hash: r.hash || r.instruction });
       setCurrentPin(''); setNewPin(''); setConfirmPin('');
-    } catch (e) {
-      setStatus({ kind: 'err', message: e.message });
-    }
+    } catch (e) { setStatus({ kind: 'err', message: e.message }); }
   };
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <Section title="Change PIN" hint="Replaces your login PIN. The new hash must be copied into your .env on the server.">
-        <Row label="Current PIN">
-          <input type="password" value={currentPin} onChange={e => setCurrentPin(e.target.value)} style={{ maxWidth: 200 }} />
-        </Row>
-        <Row label="New PIN" hint="4–8 digits.">
-          <input type="password" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ maxWidth: 200 }} />
-        </Row>
-        <Row label="Confirm new PIN">
-          <input type="password" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} style={{ maxWidth: 200 }} />
-        </Row>
+      <Section title="Change PIN" hint="Replaces your login PIN. The new hash must be copied into .env on the server.">
+        <Row label="Current PIN"><input type="password" value={currentPin} onChange={e => setCurrentPin(e.target.value)} style={{ maxWidth: 200 }} /></Row>
+        <Row label="New PIN" hint="4\u20138 digits."><input type="password" value={newPin} onChange={e => setNewPin(e.target.value)} style={{ maxWidth: 200 }} /></Row>
+        <Row label="Confirm new PIN"><input type="password" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} style={{ maxWidth: 200 }} /></Row>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
           <button className="btn btn-primary" onClick={submit} disabled={!currentPin || !newPin || !confirmPin}>Generate new PIN hash</button>
         </div>
-
         {status && (
           <div style={{ marginTop: 16, padding: 12, borderRadius: 6, fontSize: 13,
             background: status.kind === 'ok' ? 'rgba(16,217,143,0.10)' : 'rgba(255,77,109,0.10)',
@@ -253,15 +222,9 @@ function SecurityTab({ logout }) {
                 {status.hash}
               </div>
             )}
-            {status.hash && (
-              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
-                Add to <code>/mnt/FSec-Data/data/nucleus/.env</code> as <code>PIN_HASH='{status.hash}'</code> (with single quotes), then restart the backend container.
-              </div>
-            )}
           </div>
         )}
       </Section>
-
       <Section title="Session">
         <Row label="Log out of this device" hint="Clears your token from this browser only.">
           <button className="btn btn-ghost" onClick={() => { if (window.confirm('Log out now?')) logout(); }}>Log out</button>
@@ -272,7 +235,7 @@ function SecurityTab({ logout }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// DATA TAB — export, log viewer, log purge
+// DATA TAB
 // ════════════════════════════════════════════════════════════════════════
 function DataTab() {
   const [exporting, setExporting] = useState(false);
@@ -280,18 +243,20 @@ function DataTab() {
   const [logLevel, setLogLevel]   = useState('');
   const [logModule, setLogModule] = useState('');
 
-const loadLogs = async () => {
+  const loadLogs = async () => {
     const params = new URLSearchParams();
     params.set('limit', '100');
     if (logLevel)  params.set('level',  logLevel);
     if (logModule) params.set('module', logModule);
     try {
       const data = await get(`/settings/logs?${params}`);
+      // Backend returns { logs: [...], total: N } — extract the array
       if (Array.isArray(data))       setLogs(data);
       else if (data && data.logs)    setLogs(data.logs);
+      else if (data && Array.isArray(Object.values(data)[0])) setLogs(Object.values(data)[0]);
       else                           setLogs([]);
     } catch (e) {
-      console.error('[logs] load failed:', e.message);
+      console.error('[settings] loadLogs failed:', e.message);
       setLogs([]);
     }
   };
@@ -302,40 +267,33 @@ const loadLogs = async () => {
     setExporting(true);
     try {
       const token = localStorage.getItem('nucleus_token');
-      const resp = await fetch('/api/settings/export', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const resp = await fetch('/api/settings/export', { headers: { Authorization: `Bearer ${token}` } });
       if (!resp.ok) throw new Error('Export failed');
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
+      const a = document.createElement('a'); a.href = url;
       a.download = `nucleus-export-${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      alert('Export failed: ' + e.message);
-    } finally {
-      setExporting(false);
-    }
+      a.click(); URL.revokeObjectURL(url);
+    } catch (e) { alert('Export failed: ' + e.message); }
+    finally { setExporting(false); }
   };
 
   const purgeLogs = async () => {
     const days = window.prompt('Purge logs older than how many days?', '30');
     if (!days) return;
-    await del(`/settings/logs?older_than_days=${parseInt(days, 10) || 30}`);
-    loadLogs();
+    try {
+      await del(`/settings/logs?older_than_days=${parseInt(days, 10) || 30}`);
+      loadLogs();
+    } catch (e) { alert('Purge failed: ' + e.message); }
   };
 
-  const levelColour = (lvl) => ({
-    error: 'var(--red)', warn: 'var(--amber)', info: 'var(--text-secondary)', debug: 'var(--text-muted)',
-  }[lvl] || 'var(--text-muted)');
+  const levelColour = (lvl) => ({ error: 'var(--red)', warn: 'var(--amber)', info: 'var(--text-secondary)', debug: 'var(--text-muted)' }[lvl] || 'var(--text-muted)');
 
   return (
     <div style={{ maxWidth: 960 }}>
       <Section title="Export your data" hint="Download a complete JSON dump of all your Nucleus data — keep a copy off the host.">
         <button className="btn btn-primary" onClick={handleExport} disabled={exporting}>
-          {exporting ? 'Preparing…' : 'Download full export (JSON)'}
+          {exporting ? 'Preparing...' : 'Download full export (JSON)'}
         </button>
       </Section>
 
@@ -343,14 +301,12 @@ const loadLogs = async () => {
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
           <select value={logLevel} onChange={e => setLogLevel(e.target.value)} style={{ maxWidth: 140 }}>
             <option value="">All levels</option>
-            <option value="error">Error</option>
-            <option value="warn">Warn</option>
-            <option value="info">Info</option>
-            <option value="debug">Debug</option>
+            <option value="error">Error</option><option value="warn">Warn</option>
+            <option value="info">Info</option><option value="debug">Debug</option>
           </select>
           <input placeholder="Filter by module" value={logModule} onChange={e => setLogModule(e.target.value)} style={{ maxWidth: 200 }} />
           <button className="btn btn-ghost btn-sm" onClick={loadLogs}>Refresh</button>
-          <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={purgeLogs}>Purge old logs…</button>
+          <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={purgeLogs}>Purge old logs...</button>
         </div>
         <div className="card" style={{ padding: 0, maxHeight: 500, overflow: 'auto' }}>
           <table>
@@ -361,7 +317,7 @@ const loadLogs = async () => {
                 <tr key={l.id}>
                   <td style={{ fontSize: 11, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{fmt.dateTime(l.created_at)}</td>
                   <td style={{ fontSize: 11, fontWeight: 600, color: levelColour(l.level), textTransform: 'uppercase' }}>{l.level}</td>
-                  <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{l.module || '—'}</td>
+                  <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{l.module || '\u2014'}</td>
                   <td style={{ fontSize: 12 }}>{l.message}</td>
                 </tr>
               ))}
@@ -374,7 +330,7 @@ const loadLogs = async () => {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// REFERENCE TAB — life areas, categories, notebooks
+// REFERENCE TAB
 // ════════════════════════════════════════════════════════════════════════
 function ReferenceTab() {
   const [sub, setSub] = useState('life-areas');
@@ -396,24 +352,35 @@ function ReferenceTab() {
       </div>
 
       {sub === 'life-areas' && <ReferenceList kind="life-areas" label="Life area"
-        fields={[{ k: 'name', label: 'Name' }, { k: 'colour', label: 'Colour', type: 'color' }, { k: 'icon', label: 'Icon', placeholder: '🎯' }]} />}
+        fields={[{ k: 'name', label: 'Name' }, { k: 'colour', label: 'Colour', type: 'color' }, { k: 'icon', label: 'Icon', placeholder: '\ud83c\udfaf' }]} />}
       {sub === 'categories' && <ReferenceList kind="categories" label="Category"
-        fields={[{ k: 'name', label: 'Name' }, { k: 'type', label: 'Type', type: 'select', options: ['expense', 'income'] }, { k: 'colour', label: 'Colour', type: 'color' }, { k: 'icon', label: 'Icon', placeholder: '🛒' }]} />}
+        fields={[{ k: 'name', label: 'Name' }, { k: 'type', label: 'Type', type: 'select', options: ['expense', 'income'] }, { k: 'colour', label: 'Colour', type: 'color' }, { k: 'icon', label: 'Icon', placeholder: '\ud83d\uded2' }]} />}
       {sub === 'notebooks' && <ReferenceList kind="notebooks" label="Notebook"
-        fields={[{ k: 'name', label: 'Name' }, { k: 'colour', label: 'Colour', type: 'color' }, { k: 'icon', label: 'Icon', placeholder: '📓' }]} />}
+        fields={[{ k: 'name', label: 'Name' }, { k: 'colour', label: 'Colour', type: 'color' }, { k: 'icon', label: 'Icon', placeholder: '\ud83d\udcd3' }]} />}
     </div>
   );
 }
 
 function ReferenceList({ kind, label, fields }) {
-  const [items, setItems] = useState([]);
+  const [items, setItems]     = useState([]);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({});
+  const [form, setForm]       = useState({});
+  const [error, setError]     = useState(null);
 
   const load = async () => {
-    const data = await get(`/settings/${kind}`);
-    if (data) setItems(data);
+    setError(null);
+    try {
+      const data = await get(`/settings/${kind}`);
+      if (Array.isArray(data))    setItems(data);
+      else if (data && data.rows) setItems(data.rows);
+      else                        setItems([]);
+    } catch (e) {
+      console.error(`[settings] load ${kind} failed:`, e.message);
+      setError(e.message);
+      setItems([]);
+    }
   };
+
   useEffect(() => { load(); }, [kind]);
 
   const startNew = () => {
@@ -423,20 +390,25 @@ function ReferenceList({ kind, label, fields }) {
       else if (f.type === 'select') init[f.k] = f.options[0];
       else init[f.k] = '';
     }
-    setEditing('new');
-    setForm(init);
+    setEditing('new'); setForm(init);
   };
   const startEdit = (it) => { setEditing(it.id); setForm(it); };
   const cancel    = () => { setEditing(null); setForm({}); };
+
   const save = async () => {
-    if (editing === 'new') await post(`/settings/${kind}`,            form);
-    else                   await patch(`/settings/${kind}/${editing}`, form);
-    setEditing(null); setForm({}); load();
+    try {
+      if (editing === 'new') await post(`/settings/${kind}`, form);
+      else                   await patch(`/settings/${kind}/${editing}`, form);
+      setEditing(null); setForm({}); load();
+    } catch (e) { alert('Save failed: ' + e.message); }
   };
+
   const remove = async (id) => {
     if (!window.confirm(`Delete this ${label.toLowerCase()}?`)) return;
-    await del(`/settings/${kind}/${id}`);
-    load();
+    try {
+      await del(`/settings/${kind}/${id}`);
+      load();
+    } catch (e) { alert('Delete failed: ' + e.message); }
   };
 
   return (
@@ -444,23 +416,30 @@ function ReferenceList({ kind, label, fields }) {
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
         <button className="btn btn-primary" onClick={startNew}>+ New {label.toLowerCase()}</button>
       </div>
+
+      {error && (
+        <div className="card" style={{ padding: 12, marginBottom: 12, background: 'rgba(255,77,109,0.08)', border: '1px solid rgba(255,77,109,0.2)', color: 'var(--red)', fontSize: 13 }}>
+          Failed to load: {error}
+        </div>
+      )}
+
       <div className="card" style={{ padding: 0 }}>
         <table>
           <thead><tr>{fields.map(f => <th key={f.k}>{f.label}</th>)}<th></th></tr></thead>
           <tbody>
-            {items.length === 0 && <tr><td colSpan={fields.length + 1} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items yet</td></tr>}
+            {items.length === 0 && !error && <tr><td colSpan={fields.length + 1} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items yet</td></tr>}
             {items.map(it => (
               <tr key={it.id}>
                 {fields.map(f => (
                   <td key={f.k} style={{ fontSize: 13 }}>
                     {f.type === 'color'
                       ? <span style={{ display: 'inline-block', width: 18, height: 18, borderRadius: 4, background: it[f.k], verticalAlign: 'middle' }} />
-                      : (it[f.k] || '—')}
+                      : (it[f.k] || '\u2014')}
                   </td>
                 ))}
                 <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                  <button className="btn-icon btn-sm" onClick={() => startEdit(it)}>✎</button>
-                  <button className="btn-icon btn-sm" onClick={() => remove(it.id)}>×</button>
+                  <button className="btn-icon btn-sm" onClick={() => startEdit(it)}>\u270e</button>
+                  <button className="btn-icon btn-sm" onClick={() => remove(it.id)}>\u00d7</button>
                 </td>
               </tr>
             ))}
@@ -504,24 +483,17 @@ function AboutTab() {
       <Section title="Nucleus">
         <div style={{ fontSize: 13, lineHeight: 1.7 }}>
           <p>Your personal life-management and Fast Lane Technology business app.</p>
-          <p style={{ marginTop: 12, color: 'var(--text-secondary)' }}>
-            Self-hosted, single-user, runs entirely on your own infrastructure.
-          </p>
+          <p style={{ marginTop: 12, color: 'var(--text-secondary)' }}>Self-hosted, single-user, runs entirely on your own infrastructure.</p>
         </div>
       </Section>
-
       <Section title="Build">
-        <Row label="Frontend">
-          <code>{import.meta.env.MODE}</code>
-        </Row>
-        <Row label="API base">
-          <code>{import.meta.env.VITE_API_URL || '/api'}</code>
-        </Row>
+        <Row label="Frontend"><code>{import.meta.env.MODE}</code></Row>
+        <Row label="API base"><code>{import.meta.env.VITE_API_URL || '/api'}</code></Row>
+        <Row label="Version"><code>v4.0</code></Row>
       </Section>
-
       <Section title="Useful">
         <div style={{ fontSize: 13, lineHeight: 2 }}>
-          <div>Logs: see <strong>Data → Application logs</strong></div>
+          <div>Logs: see <strong>Data \u2192 Application logs</strong></div>
           <div>Backups: nightly at 03:00 to <code>/mnt/FSec-Data/data/nucleus/backups/</code></div>
           <div>Database migrations: applied automatically on backend startup</div>
         </div>

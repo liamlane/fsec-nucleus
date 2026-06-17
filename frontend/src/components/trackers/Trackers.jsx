@@ -62,7 +62,7 @@ export default function Trackers() {
   };
 
   const handleDelete = async (id) => {
-    if (confirm('Delete this contact?')) { await del(`/trackers/contacts/${id}`); load(); }
+    if (window.confirm('Delete this contact?')) { await del(`/trackers/contacts/${id}`); load(); }
   };
 
   const overdue = contacts.filter(c => {
