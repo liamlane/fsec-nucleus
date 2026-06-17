@@ -366,7 +366,7 @@ export default function Marketing() {
                 </div>
                 <div>
                   <button className="btn-icon btn-sm" onClick={() => { setEditing(t); setForm({ ...t }); setModal('template'); }}>✎</button>
-                  {!t.is_seeded && <button className="btn-icon btn-sm" onClick={async () => { if (confirm('Delete template?')) { await del(`/marketing/templates/${t.id}`); loadTemplates(); } }}>×</button>}
+                  {!t.is_seeded && <button className="btn-icon btn-sm" onClick={async () => { if (window.confirm('Delete template?')) { await del(`/marketing/templates/${t.id}`); loadTemplates(); } }}>×</button>}
                 </div>
               </div>
               <pre style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', background: 'var(--bg-tertiary)', padding: 8, borderRadius: 4, maxHeight: 120, overflow: 'hidden' }}>{t.template}</pre>
@@ -399,7 +399,7 @@ export default function Marketing() {
                 {i.notes && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{i.notes}</div>}
               </div>
               <span style={{ fontSize: 10, color: PRIORITY[i.priority] || PRIORITY.medium, textTransform: 'uppercase' }}>{i.priority}</span>
-              <button className="btn-icon btn-sm" onClick={async () => { if (confirm('Delete idea?')) { await del(`/marketing/ideas/${i.id}`); loadIdeas(); } }}>×</button>
+              <button className="btn-icon btn-sm" onClick={async () => { if (window.confirm('Delete idea?')) { await del(`/marketing/ideas/${i.id}`); loadIdeas(); } }}>×</button>
             </div>
           ))}
           {ideas.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No content ideas yet</div>}
@@ -413,7 +413,7 @@ export default function Marketing() {
             <div key={c.id} className="card" style={{ borderLeft: `4px solid ${c.colour}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <div style={{ fontWeight: 600 }}>{c.name}</div>
-                <button className="btn-icon btn-sm" onClick={async () => { if (confirm('Delete campaign?')) { await del(`/marketing/campaigns/${c.id}`); loadCampaigns(); } }}>×</button>
+                <button className="btn-icon btn-sm" onClick={async () => { if (window.confirm('Delete campaign?')) { await del(`/marketing/campaigns/${c.id}`); loadCampaigns(); } }}>×</button>
               </div>
               {c.goal && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}><strong>Goal:</strong> {c.goal}</div>}
               {c.description && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{c.description}</div>}

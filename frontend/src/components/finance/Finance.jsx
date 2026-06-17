@@ -83,7 +83,7 @@ export default function Finance() {
   };
 
   const handleDeleteTxn = async (id) => {
-    if (confirm('Delete transaction? This will reverse the account balance.')) {
+    if (window.confirm('Delete transaction? This will reverse the account balance.')) {
       await del(`/finance/transactions/${id}`);
       load();
     }
@@ -100,7 +100,7 @@ export default function Finance() {
   };
 
   const handleDeletePayee = async (id) => {
-    if (confirm('Delete payee? Linked transactions will keep but unlink.')) {
+    if (window.confirm('Delete payee? Linked transactions will keep but unlink.')) {
       await del(`/finance/payees/${id}`);
       load();
     }
@@ -496,7 +496,7 @@ export default function Finance() {
                       <div style={{ fontWeight: 600 }}>{a.name}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{a.type}</div>
                     </div>
-                    <button className="btn-icon btn-sm" onClick={async () => { if (confirm('Delete account?')) { await del(`/finance/accounts/${a.id}`); load(); } }}>×</button>
+                    <button className="btn-icon btn-sm" onClick={async () => { if (window.confirm('Delete account?')) { await del(`/finance/accounts/${a.id}`); load(); } }}>×</button>
                   </div>
                   <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)', color: negative ? 'var(--red)' : 'var(--text-primary)' }}>
                     {negative && '↓ '}{fmt.currency(a.balance, a.currency)}

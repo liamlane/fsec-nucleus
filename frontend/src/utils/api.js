@@ -1,8 +1,7 @@
 // frontend/src/utils/api.js
 //
 // Thin fetch wrapper + formatting helpers.
-// fmt.* helpers honour user preferences set via PreferencesContext, falling
-// back to sensible defaults when prefs aren't loaded yet.
+// fmt.* helpers honour user preferences set via PreferencesContext.
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -25,7 +24,13 @@ async function request(endpoint, options = {}) {
     };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+    let res;
+    try {
+        res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+    } catch (e) {
+        console.error(`[api] Network error: ${endpoint}`, e.message);
+        throw new Error(`Network error: ${e.message}`);
+    }
 
     if (res.status === 401) {
         handleAuthFailure();
@@ -34,12 +39,14 @@ async function request(endpoint, options = {}) {
 
     if (!res.ok) {
         const text = await res.text();
+        let message = `HTTP ${res.status}`;
         try {
             const parsed = JSON.parse(text);
-            throw new Error(parsed.error || `HTTP ${res.status}`);
+            if (parsed.error) message = parsed.error;
         } catch {
-            throw new Error(text || `HTTP ${res.status}`);
+            if (text) message = text;
         }
+        throw new Error(message);
     }
 
     const contentLength = res.headers.get('content-length');
@@ -56,7 +63,7 @@ export const del   = (endpoint)       => request(endpoint, { method: 'DELETE' })
 
 // ── Formatting prefs (set by PreferencesContext) ────────────────────────
 let fmtPrefs = {
-    currency_symbol:   '£',
+    currency_symbol:   '\u00a3',
     date_format:       'en-GB',
     time_format:       '24h',
     first_day_of_week: 1,
@@ -71,8 +78,6 @@ export function getFmtPrefs() {
 }
 
 // ── Confirm helper for destructive actions ──────────────────────────────
-// Components call: `if (!confirmDestructive('Delete?')) return;`
-// Honours the `confirm_destructive` preference — when off, returns true without prompting.
 let confirmEnabled = true;
 export function setConfirmDestructive(enabled) { confirmEnabled = !!enabled; }
 export function confirmDestructive(message) {
