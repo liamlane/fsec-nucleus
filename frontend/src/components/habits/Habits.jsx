@@ -87,9 +87,7 @@ export default function Habits() {
   };
 
   const handleDeleteHabit = async (id) => {
-    if (!window.confirm('Archive habit?')) return;
-    try { await del(`/habits/${id}`); loadHabits(); }
-    catch (e) { alert('Could not archive: ' + e.message); }
+    if (window.confirm('Archive habit?')) { await del(`/habits/${id}`); loadHabits(); }
   };
 
   // ── Wellness helpers ────────────────────────────────────────────────────
@@ -127,16 +125,17 @@ export default function Habits() {
   };
 
   const handleResetAbstinence = async (sub) => {
-    if (!window.confirm('Reset abstinence counter to today?')) return;
-    try { await patch(`/wellness/substances/${sub.id}`, { abstinence_since: today }); loadWellness(); }
-    catch (e) { alert('Reset failed: ' + e.message); }
+    if (window.confirm('Reset abstinence counter to today?')) {
+      await patch(`/wellness/substances/${sub.id}`, { abstinence_since: today });
+      loadWellness();
+    }
   };
 
   const handleDeleteSubstance = async (id) => {
-    if (!window.confirm('Archive substance? Logs will be kept.')) return;
-    try { await del(`/wellness/substances/${id}`); loadWellness(); }
-    catch (e) { alert('Could not archive: ' + e.message); }
-  };
+    if (window.confirm('Archive substance? Logs will be kept.')) {
+      await del(`/wellness/substances/${id}`);
+      loadWellness();
+    }
   };
 
   const todayDow = new Date().getDay();
