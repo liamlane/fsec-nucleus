@@ -15,20 +15,8 @@ import Calendar     from './components/calendar/Calendar.jsx';
 import Journal      from './components/journal/Journal.jsx';
 import TimeTracking from './components/timetracking/TimeTracking.jsx';
 import Debts        from './components/debts/Debts.jsx';
+import Tickets      from './components/tickets/Tickets.jsx';
 import Settings     from './components/Settings.jsx';
-
-// Placeholder until Deploy 2 ships the full Tickets module
-function TicketsPlaceholder() {
-  return (
-    <div style={{ textAlign: 'center', padding: 60 }}>
-      <div style={{ fontSize: 48, marginBottom: 16 }}>▣</div>
-      <h2>IT Ticketing</h2>
-      <p style={{ color: 'var(--text-muted)', maxWidth: 400, margin: '12px auto' }}>
-        Job tracking, time logging, and invoice generation for FLT client work. Coming in the next deploy.
-      </p>
-    </div>
-  );
-}
 
 const Protected = ({ children }) => {
   const { isAuth } = useAuth();
@@ -56,7 +44,7 @@ export default function App() {
               <Route path="finance/*"    element={<Finance />} />
               <Route path="debts/*"      element={<Debts />} />
               <Route path="business/*"   element={<Business />} />
-              <Route path="tickets/*"    element={<TicketsPlaceholder />} />
+              <Route path="tickets/*"    element={<Tickets />} />
               <Route path="marketing/*"  element={<Marketing />} />
               <Route path="goals"        element={<Goals />} />
               <Route path="habits"       element={<Habits />} />
