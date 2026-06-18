@@ -230,10 +230,10 @@ router.patch('/:id', asyncHandler(async (req, res) => {
 
     // Auto-set lifecycle timestamps
     let extra = '';
-    if (req.body.status === 'resolved' && !req.body.resolved_at) extra += `, resolved_at = NOW()`;
-    if (req.body.status === 'closed'   && !req.body.closed_at)   extra += `, closed_at = NOW()`;
-    if (req.body.status === 'in_progress' && oldStatus === 'new' && !req.body.responded_at) extra += `, responded_at = NOW()`;
-    if (req.body.status === 'triaged' && !req.body.responded_at) extra += `, responded_at = NOW()`;
+    if (req.body.status === 'resolved' && !updates.includes('resolved_at')) extra += `, resolved_at = NOW()`;
+    if (req.body.status === 'closed'   && !updates.includes('closed_at'))   extra += `, closed_at = NOW()`;
+    if (req.body.status === 'in_progress' && oldStatus === 'new' && !updates.includes('responded_at')) extra += `, responded_at = NOW()`;
+    if (req.body.status === 'triaged' && !updates.includes('responded_at')) extra += `, responded_at = NOW()`;
 
     const { rows } = await db.query(
         `UPDATE tickets SET ${sets}${extra} WHERE id=$${updates.length+1} RETURNING *`,
